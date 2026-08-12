@@ -4,7 +4,8 @@
 # Adaptive Learning — ML-based NIDPS System
 #
 # Python >= 3.8 required (tested on 3.8.10 / Ubuntu 20.04 / BackBox)
-# All upper version caps below guarantee wheels/compatibility for Python 3.8.
+# Environment markers below retain conservative Python 3.8-3.11 pins and select
+# compatible wheels for Python 3.12+.
 # Usage: pip install -r requirements.txt
 # ============================================================
 
@@ -15,10 +16,14 @@ dpkt>=1.9.8                # Packet parsing (PCAP replay / training data)
 # ── Machine Learning ──────────────────────────────────────────
 # NOTE: Upper version caps are intentional for Python 3.8 compatibility.
 #       Do NOT remove the caps unless you upgrade Python to >=3.9.
-lightgbm>=3.3.0,<4.0       # Gradient Boosting (3.3.x is the last line with Py3.8 wheels)
-scikit-learn>=1.0.0,<1.4   # IsolationForest etc (1.3.x last fully compatible with Py3.8)
-numpy>=1.21.0,<1.25        # Numerics (1.24.x last with Py3.8 binary wheels)
-pandas>=1.3.0,<2.1         # DataFrames (1.5.x / 2.0.x still build on Py3.8)
+lightgbm>=3.3.0,<4.0; python_version < "3.12"
+lightgbm>=4.1,<5; python_version >= "3.12"
+scikit-learn>=1.0.0,<1.4; python_version < "3.12"
+scikit-learn>=1.3.2,<1.6; python_version >= "3.12"
+numpy>=1.21.0,<1.25; python_version < "3.12"
+numpy>=1.26,<2.1; python_version >= "3.12"
+pandas>=1.3.0,<2.1; python_version < "3.12"
+pandas>=2.1.1,<2.3; python_version >= "3.12"
 joblib>=1.2.0,<1.5         # Model serialization (save/load .pkl)
 
 # ── API Backend ───────────────────────────────────────────────

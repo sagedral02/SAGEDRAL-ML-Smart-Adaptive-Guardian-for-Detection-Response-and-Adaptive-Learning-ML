@@ -13,8 +13,12 @@ echo "Removing nftables table..."
 nft delete table inet sagedral 2>/dev/null || true
 
 echo "Uninstalling Python package..."
-pip3 uninstall -y sagedral-ml 2>/dev/null || true
-pip uninstall -y sagedral-ml 2>/dev/null || true
+if [[ -L /usr/local/bin/sagedral-ml ]] && \
+   [[ "$(readlink /usr/local/bin/sagedral-ml)" == "/opt/sagedral-ml/venv/bin/sagedral-ml" ]]; then
+    rm -f /usr/local/bin/sagedral-ml
+fi
+rm -rf /opt/sagedral-ml/venv
+rmdir /opt/sagedral-ml 2>/dev/null || true
 
 echo "Cleaning up ML model files (remove /var/lib/sagedral-ml/models)..."
 if [[ -d /var/lib/sagedral-ml/models ]]; then

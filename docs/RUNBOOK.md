@@ -7,6 +7,9 @@
 >
 > Atualizasaun ikus: `2026-07-31`
 
+Ba deployment espesífiku topolojia kampus FECT, haree
+[`instalation.md`](instalation.md).
+
 ---
 
 ## 1. Regra seguransa antes hahú

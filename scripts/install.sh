@@ -31,21 +31,18 @@ else
     error "python3 command not found. Please install python3 first."
 fi
 
-# 2b. Pip bootstrap (some minimal distros have python3 but no pip)
-if ! command -v pip3 &>/dev/null; then
-    warn "pip3 not found — trying to install python3-pip / bootstrap via ensurepip..."
-    apt-get install -y python3-pip 2>/dev/null || \
-    python3 -m ensurepip --upgrade 2>/dev/null || \
-    (curl -sS https://bootstrap.pypa.io/get-pip.py | python3) || \
-    error "Failed to install pip3. Install python3-pip manually then re-run installer."
-fi
-
 # 3. Install system dependencies
 info "Installing system dependencies (python3-dev, libpcap, nftables, build-essential)..."
 if command -v apt-get &>/dev/null; then
-    DEBIAN_FRONTEND=noninteractive apt-get update -qq
+    warn "If apt reports Temporary failure resolving, fix DNS/network access before continuing."
+    if ! DEBIAN_FRONTEND=noninteractive apt-get update -qq; then
+        warn "apt update failed; DNS/network diagnostic follows:"
+        getent hosts archive.ubuntu.com security.ubuntu.com 2>/dev/null || true
+        warn "Continuing with cached apt indexes; retry if dependency installation fails."
+    fi
     # build-essential + python3-dev Wajib untuk compile lightgbm/numpy/scikit-learn C extensions di Py3.8
     apt-get install -y --no-install-recommends \
+        python3-venv \
         python3-pip \
         python3-dev \
         python3-setuptools \
@@ -60,27 +57,30 @@ elif command -v yum &>/dev/null; then
     yum install -y python3-pip python3-devel libpcap-devel nftables tcpdump gcc gcc-c++ libgomp
 fi
 
+INSTALL_ROOT=/opt/sagedral-ml
+VENV_DIR=/opt/sagedral-ml/venv
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+install -d -m 0755 "${INSTALL_ROOT}"
+python3 -m venv "${VENV_DIR}"
+VENV_PYTHON="${VENV_DIR}/bin/python"
+
 # 4. Upgrade pip/setuptools/wheel terlebih dahulu (kritis untuk build Py3.8 wheels)
 info "Upgrading pip, setuptools, and wheel for Python 3.8 build compatibility..."
-pip3 install --upgrade pip setuptools wheel || \
-    python3 -m pip install --upgrade pip setuptools wheel
+"${VENV_PYTHON}" -m pip install --upgrade pip setuptools wheel
 
 # 5. Install Python dependencies from requirements.txt (version-capped for Py3.8)
 info "Installing Python dependencies from requirements.txt (Py3.8-compatible version pins)..."
-python3 -m pip install -r requirements.txt
+"${VENV_PYTHON}" -m pip install -r "${PROJECT_DIR}/requirements.txt"
 
 # 6. Install sagedral-ml Python package
 info "Installing sagedral-ml Python package..."
-python3 -m pip install .
+"${VENV_PYTHON}" -m pip install "${PROJECT_DIR}"
 
 # 7. Verify sagedral-ml CLI accessible
-if ! command -v sagedral-ml &>/dev/null; then
-    # Fallback: cari di /usr/local/bin atau pip show location
-    SAG_CLI=$(python3 -c 'import sysconfig; print(sysconfig.get_path("scripts"))' 2>/dev/null)/sagedral-ml
-    if [[ -x "$SAG_CLI" ]]; then
-        ln -sf "$SAG_CLI" /usr/local/bin/sagedral-ml 2>/dev/null || true
-    fi
-fi
+SAG_CLI=/usr/local/bin/sagedral-ml
+[[ ! -d "${SAG_CLI}" ]] || error "CLI destination is a directory: ${SAG_CLI}. Move it aside and re-run."
+ln -sfnT "${VENV_DIR}/bin/sagedral-ml" "${SAG_CLI}"
+[[ -x "${SAG_CLI}" ]] || error "Installed CLI is not executable."
 
 # 8. Create directories
 info "Creating directories..."
@@ -103,7 +103,7 @@ chmod 0640 /var/log/sagedral-ml.log
 
 # 9. Config template
 if [[ ! -f /etc/sagedral/config.toml ]]; then
-    sagedral-ml config template > /etc/sagedral/config.toml
+    "${SAG_CLI}" config template > /etc/sagedral/config.toml
     chown root:sagedral /etc/sagedral/config.toml
     chmod 0660 /etc/sagedral/config.toml
     info "Created default config at /etc/sagedral/config.toml"
@@ -123,7 +123,7 @@ nft add rule inet sagedral input ip saddr @blocklist drop 2>/dev/null || true
 
 # 11. ML Model initialization (CRITICAL — generates fallback models so ML Model Loaded = True on first start)
 info "Initializing ML detection models (rule-based fallback if LightGBM can't compile yet)..."
-if runuser -u sagedral -- sagedral-ml model init; then
+if runuser -u sagedral -- "${SAG_CLI}" model init; then
     info "ML models initialized successfully."
 else
     warn "ML model init returned non-zero. Service will generate fallbacks on first startup."
@@ -194,7 +194,7 @@ sleep 2
 if command -v sagedral-ml &>/dev/null; then
     echo ""
     echo "=== ML Model Status (offline check) ==="
-    sagedral-ml model info 2>&1 || true
+    "${SAG_CLI}" model info 2>&1 || true
     echo ""
 fi
 

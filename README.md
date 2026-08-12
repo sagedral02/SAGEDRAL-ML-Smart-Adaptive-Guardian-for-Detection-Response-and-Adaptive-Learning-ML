@@ -203,6 +203,7 @@ npm run build
 |---|---|
 | [`docs/prd.md`](docs/prd.md) | Vizaun produtu, rekizitu, arkitetura, estatutu fitur, gap no roadmap |
 | [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | Topolojia, instalasaun, konfigurasaun, training, operasaun, DR no troubleshooting |
+| [`docs/instalation.md`](docs/instalation.md) | Deployment espesífiku ba topolojia kampus FECT ho Cisco SPAN |
 
 README ne'e deliberadamente badak. `prd.md` mak fonte verdade ba produtu;
 `RUNBOOK.md` mak fonte verdade ba komandu no operasaun.
