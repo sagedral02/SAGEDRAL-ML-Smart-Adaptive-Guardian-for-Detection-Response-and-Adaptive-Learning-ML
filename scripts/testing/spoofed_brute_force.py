@@ -22,6 +22,13 @@ import random
 import sys
 import time
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 try:
     from scapy.all import IP, TCP, send, conf
 except ImportError:
@@ -46,9 +53,9 @@ def _rand_spoofed_src() -> str:
 
 def brute_force_signature(target_ip: str, ports, attempts_per_port: int, duration: int) -> None:
     print("=" * 70)
-    print(f"  SPOOFED BRUTE FORCE SIGNATURE — Target: {target_ip}:{ports}")
+    print(f"  SPOOFED BRUTE FORCE SIGNATURE -- Target: {target_ip}:{ports}")
     print(f"  Attempts/port: {attempts_per_port} | Duration cap: {duration}s")
-    print(f"  SAFETY: All spoofed src IPs — real host IP never used ✅")
+    print(f"  SAFETY: All spoofed src IPs -- real host IP never used [OK]")
     print("=" * 70)
     print("[!] NOTE: This generates a BRUTE FORCE network SIGNATURE only.")
     print("    No actual credential guessing is performed (legal / ethical).")
@@ -99,7 +106,7 @@ def brute_force_signature(target_ip: str, ports, attempts_per_port: int, duratio
     print(f"[DONE] Sent {sent} packets (brute force signature).")
     print(f"       High rst_flag_count + dst_port on auth ports")
     print(f"       -> SAGEDRAL-ML classifier should fire: attack class BruteForce")
-    print(f"\n👉 Verify on BackBox VM:")
+    print(f"\n-> Verify on BackBox VM:")
     print(f"   CLI : sagedral-ml alerts list --limit 30")
     print(f"   Web : Dashboard Alerts tab (filter by BruteForce)")
 

@@ -14,6 +14,13 @@ import random
 import sys
 import time
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 try:
     from scapy.all import IP, UDP, Raw, send, conf
 except ImportError:
@@ -38,9 +45,9 @@ def _rand_spoofed_src() -> str:
 
 def udp_flood(target, dport, pps, duration, payload_len=64):
     print("=" * 70)
-    print(f"  SPOOFED UDP FLOOD — Target: {target}:{dport}/udp")
+    print(f"  SPOOFED UDP FLOOD -- Target: {target}:{dport}/udp")
     print(f"  Rate: ~{pps} pkt/s | Duration: {duration}s | Payload: {payload_len}B")
-    print(f"  SAFETY: Random spoofed src IPs — real host IP never used ✅")
+    print(f"  SAFETY: Random spoofed src IPs -- real host IP never used [OK]")
     print("=" * 70)
     time.sleep(2)
 
@@ -69,7 +76,7 @@ def udp_flood(target, dport, pps, duration, payload_len=64):
     print("-" * 70)
     print(f"[DONE] Total UDP sent: {sent} packets.")
     print(f"       -> SAGEDRAL-ML should see high PPS -> DDoS anomaly alert.")
-    print(f"\n👉 Verify: sagedral-ml alerts list --limit 20")
+    print(f"\n-> Verify: sagedral-ml alerts list --limit 20")
 
 
 def main():

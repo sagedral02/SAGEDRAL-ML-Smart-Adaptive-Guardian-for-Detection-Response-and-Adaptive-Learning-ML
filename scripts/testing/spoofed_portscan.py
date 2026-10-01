@@ -19,6 +19,13 @@ import random
 import sys
 import time
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 try:
     from scapy.all import IP, TCP, send, conf
 except ImportError:
@@ -56,10 +63,10 @@ def _random_spoofed_src_ip() -> str:
 
 def port_scan(target_ip: str, ports, interval_s: float) -> None:
     print("=" * 70)
-    print(f"  SPOOFED PORT SCAN — Target: {target_ip}")
+    print(f"  SPOOFED PORT SCAN -- Target: {target_ip}")
     print(f"  Ports: {len(ports)} ports | Inter-packet: {interval_s}s")
     print(f"  SAFETY: EACH SYN uses a NEW random spoofed source IP.")
-    print(f"          Your real host IP is NEVER the scanner source ✅")
+    print(f"          Your real host IP is NEVER the scanner source [OK]")
     print("=" * 70)
     time.sleep(2)
 
@@ -86,7 +93,7 @@ def port_scan(target_ip: str, ports, interval_s: float) -> None:
     print(f"[DONE] Sent {sent} SYN probes (Port Scan signature)")
     print(f"       -> SAGEDRAL-ML feature 'syn_flag_count' + dst_port spread")
     print(f"          should classify this traffic as attack class PortScan")
-    print(f"\n👉 Verify on BackBox VM:")
+    print(f"\n-> Verify on BackBox VM:")
     print(f"   CLI : sagedral-ml alerts list --limit 30")
     print(f"   CLI : sudo nft list set inet sagedral blocklist")
     print(f"   Web : Dashboard -> Alerts + Blocked IPs tabs")

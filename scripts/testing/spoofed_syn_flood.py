@@ -20,6 +20,13 @@ import random
 import sys
 import time
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 try:
     from scapy.all import IP, TCP, send, RandShort, conf
 except ImportError:
@@ -95,8 +102,8 @@ def syn_flood(target_ip: str, target_port: int, pps: int, duration: int, unique_
     elapsed = max(0.001, (time.time() - (end_ts - duration)))
     print(f"[DONE] Total SYN packets sent: {sent}")
     print(f"       Elapsed: {elapsed:.1f}s | Effective rate: {sent/elapsed:.1f} pkt/s")
-    print(f"       All packets had SPOOFED source IPs (not your real IP) ✅")
-    print(f"\n👉 Now check in BackBox SAGEDRAL-ML VM:")
+    print(f"       All packets had SPOOFED source IPs (not your real IP) [OK]")
+    print(f"\n-> Now check in BackBox SAGEDRAL-ML VM:")
     print(f"   - Dashboard Alerts tab -> anomaly_score spike, attack class = DDoS/DoS")
     print(f"   - CLI: sagedral-ml alerts list --limit 20")
     print(f"   - CLI: sudo nft list set inet sagedral blocklist")
