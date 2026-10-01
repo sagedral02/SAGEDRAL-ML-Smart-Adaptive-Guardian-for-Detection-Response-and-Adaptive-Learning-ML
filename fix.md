@@ -105,6 +105,17 @@ Topologi jaringan pengujian saat ini telah terhubung secara fisik ke Router Mikr
 
 ---
 
+### Temuan 6: Crash UnicodeEncodeError pada Skrip Uji Serangan Windows Terminal
+- **Gejala:** Saat skrip `scripts/testing/spoofed_portscan.py`, `spoofed_syn_flood.py`, `spoofed_udp_flood.py`, atau `spoofed_brute_force.py` dijalankan di Command Prompt / PowerShell Windows, skrip crash dengan error:
+  `UnicodeEncodeError: 'charmap' codec can't encode character '\u2705'`
+- **Akar Penyebab (Attacker Client):**
+  Konsol bawaan Windows menggunakan tabel kode karakter warisan (`cp1252` atau `cp437`) yang tidak mendukung karakter emoji Unicode (`✅`, `👉`).
+- **Solusi yang Telah Diterapkan:**
+  1. Menambahkan `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` pada seluruh skrip pengujian saat berjalan di platform Windows (`win32`).
+  2. Mengganti seluruh simbol emoji dengan penanda teks ASCII standar (`[OK]`, `->`).
+
+---
+
 ## 3. Instruksi Langkah Pengujian Lintas-Laptop
 
 Lakukan langkah-langkah berikut secara teratur pada masing-masing laptop:
