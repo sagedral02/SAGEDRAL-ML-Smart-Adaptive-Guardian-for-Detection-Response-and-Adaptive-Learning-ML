@@ -54,3 +54,49 @@ def test_disabled_rules_skipped():
     engine = SignatureEngine(disabled_rules=["SIG-001"])
     result = engine.evaluate(MOCK_SYN_FLOOD_FLOW)
     assert "SIG-001" not in result.matched_rules
+
+
+def test_single_udp_packet_not_flagged():
+    engine = SignatureEngine()
+    # Single UDP packet flow (e.g., DNS, LLMNR, NTP)
+    single_udp_flow = {
+        "protocol": 17,
+        "total_fwd_packets": 1,
+        "total_bwd_packets": 0,
+        "flow_packets_per_sec": 0.0,
+        "dst_port": 5355,
+    }
+    result = engine.evaluate(single_udp_flow)
+    assert "SIG-007" not in result.matched_rules
+    assert result.matched is False
+
+
+def test_single_icmp_ping_not_flagged():
+    engine = SignatureEngine()
+    # Single ICMP ping packet flow
+    single_icmp_flow = {
+        "protocol": 1,
+        "total_fwd_packets": 1,
+        "total_bwd_packets": 0,
+        "flow_packets_per_sec": 0.0,
+        "dst_port": 0,
+    }
+    result = engine.evaluate(single_icmp_flow)
+    assert "SIG-003" not in result.matched_rules
+    assert result.matched is False
+
+
+def test_udp_flood_detected():
+    engine = SignatureEngine()
+    udp_flood_flow = {
+        "protocol": 17,
+        "total_fwd_packets": 200,
+        "total_bwd_packets": 0,
+        "flow_packets_per_sec": 6000.0,
+        "dst_port": 80,
+    }
+    result = engine.evaluate(udp_flood_flow)
+    assert result.matched is True
+    assert "SIG-007" in result.matched_rules
+    assert result.max_severity == "HIGH"
+

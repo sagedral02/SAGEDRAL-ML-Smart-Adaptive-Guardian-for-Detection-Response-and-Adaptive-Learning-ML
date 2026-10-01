@@ -37,3 +37,22 @@ def test_flow_record_feature_vector():
     assert vec["psh_flag_count"] == 1
     assert vec["protocol"] == 6
     assert vec["dst_port"] == 80
+
+
+def test_single_packet_zero_duration_rate():
+    flow = FlowRecord(
+        src_ip="192.168.88.251",
+        dst_ip="224.0.0.252",
+        src_port=5355,
+        dst_port=5355,
+        protocol=17,
+        start_time=100.0,
+        end_time=100.0,
+    )
+    flow.add_packet(pkt_len=75, header_len=28, flags={}, is_forward=True, timestamp=100.0)
+
+    vec = flow.to_feature_vector()
+    assert vec["total_fwd_packets"] == 1
+    assert vec["flow_packets_per_sec"] == 0.0
+    assert vec["flow_bytes_per_sec"] == 0.0
+

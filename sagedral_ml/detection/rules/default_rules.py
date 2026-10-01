@@ -37,9 +37,10 @@ SIGNATURE_RULES: List[Dict[str, Any]] = [
         "name": "ICMP Flood",
         "description": "Abnormal volume of ICMP traffic per second",
         "severity": "HIGH",
-        "params": {"min_packets_per_sec": 1000},
+        "params": {"min_packets_per_sec": 1000, "min_packets": 50},
         "condition": lambda flow, params: (
             flow.get("protocol", 0) == 1 and
+            flow.get("total_fwd_packets", 0) >= params.get("min_packets", 50) and
             flow.get("flow_packets_per_sec", 0) > params["min_packets_per_sec"]
         ),
         "attack_type": "DDoS",
@@ -86,9 +87,10 @@ SIGNATURE_RULES: List[Dict[str, Any]] = [
         "name": "UDP Flood",
         "description": "Extremely high UDP packet throughput per second",
         "severity": "HIGH",
-        "params": {"min_packets_per_sec": 5000},
+        "params": {"min_packets_per_sec": 5000, "min_packets": 50},
         "condition": lambda flow, params: (
             flow.get("protocol", 0) == 17 and
+            flow.get("total_fwd_packets", 0) >= params.get("min_packets", 50) and
             flow.get("flow_packets_per_sec", 0) > params["min_packets_per_sec"]
         ),
         "attack_type": "DDoS",

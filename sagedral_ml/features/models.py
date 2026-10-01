@@ -105,10 +105,14 @@ class FlowRecord:
         Convert FlowRecord to a dictionary of 28 numeric features.
         Matches exact schema required by Signature Engine and LightGBM model.
         """
-        duration = max(self.end_time - self.start_time, 1e-6)
+        raw_duration = self.end_time - self.start_time
+        duration = max(raw_duration, 1e-6)
 
         total_bytes = self.total_fwd_bytes + self.total_bwd_bytes
         total_pkts = self.total_fwd_packets + self.total_bwd_packets
+
+        flow_bytes_per_sec = float(total_bytes) / duration if raw_duration > 0 else 0.0
+        flow_packets_per_sec = float(total_pkts) / duration if raw_duration > 0 else 0.0
 
         fwd_len_mean = float(self.fwd_packet_lengths.mean)
         fwd_len_std = float(self.fwd_packet_lengths.std)
@@ -134,8 +138,8 @@ class FlowRecord:
             "fwd_packet_len_std": fwd_len_std,
             "bwd_packet_len_mean": bwd_len_mean,
             "bwd_packet_len_std": bwd_len_std,
-            "flow_bytes_per_sec": float(total_bytes) / duration,
-            "flow_packets_per_sec": float(total_pkts) / duration,
+            "flow_bytes_per_sec": flow_bytes_per_sec,
+            "flow_packets_per_sec": flow_packets_per_sec,
             "fwd_iat_mean": fwd_iat_mean,
             "fwd_iat_std": fwd_iat_std,
             "bwd_iat_mean": bwd_iat_mean,
