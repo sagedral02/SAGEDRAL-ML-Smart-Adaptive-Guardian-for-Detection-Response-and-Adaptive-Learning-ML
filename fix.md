@@ -242,5 +242,38 @@ python scripts/testing/spoofed_brute_force.py --target 192.168.88.20 --ports 80,
 | **Zero False-Positive Baseline** | `prd.md` §2.2 | Tidak menandai paket broadcast/multicast OS normal sebagai serangan | ✅ Teratasi dengan perbaikan penghitungan durasi nol dan ambang batas `min_packets >= 50` |
 
 ---
+
+## 5. Log Eksekusi Pengujian Lapangan Fase 6 (Attack Execution & Verification Log)
+
+Pengujian penyerangan Fase 6 telah dieksekusi secara langsung dari **Laptop Attacker (Windows di `ether2`)** menuju **Laptop Target (`192.168.88.20` di `ether3`)** melintasi jalur inline gateway **SAGEDRAL-ML (`enxc8`)**.
+
+### A. Verifikasi Awal (Pre-Flight Checks)
+- **Link Fisik MikroTik:** Port `ether3` berstatus `RS` (Running Slave) setelah kabel terhubung.
+- **Lease DHCP Target:** IP `192.168.88.20` terikat statis ke MAC `70:5A:0F:8B:70:66` (`DESKTOP-57FUKP0`).
+- **Ping RTT:** Rata-rata `< 1ms` (0% packet loss).
+- **Web Server Target:** `Python SimpleHTTP/0.6` pada port 80 merespons `HTTP/1.0 200 OK`.
+
+---
+
+### B. Hasil Eksekusi Skenario Pengujian
+
+| Skenario | Skrip Pengujian | Parameter & Volume | Durasi & Throughput | Status Pengiriman |
+|---|---|---|---|---|
+| **Skenario 1: Baseline Traffic** | `curl.exe` Loop | 20 HTTP GET Requests | ~5 detik | ✅ 20/20 Berhasil (200 OK) |
+| **Skenario 2: Port Scanning** | `spoofed_portscan.py` | 101 Port Unik (Top100) | Inter-packet: 0.02s | ✅ 101 SYN Probes Terkirim |
+| **Skenario 3: SYN Flood (DDoS)** | `spoofed_syn_flood.py` | Port 80, 1000 Spoofed IPs | 15.0 detik, **2.989 paket** (199.2 pkt/s) | ✅ Selesai Penuh |
+| **Skenario 4: UDP Flood** | `spoofed_udp_flood.py` | Port 53, Spoofed Source IPs | 15.0 detik, **2.930 paket** (194.9 pkt/s) | ✅ Selesai Penuh |
+| **Skenario 5: Brute Force** | `spoofed_brute_force.py` | Port 80, 8080, 22 | 15.0 detik, **900 paket** | ✅ Selesai Penuh |
+
+---
+
+### C. Uji Ketahanan Pasca-Serangan (Post-Attack Health Check)
+1. **Target Web Server:** Langsung diuji ulang dengan `curl.exe -i http://192.168.88.20/` segera setelah seluruh serangan selesai:
+   - Status: **`HTTP/1.0 200 OK` (Server tidak tumbang/crash)**.
+2. **Koneksi Internet Attacker & Gateway:** Diuji dengan `curl.exe https://1.1.1.1/`:
+   - Status: **`HTTP/1.1 301 Moved Permanently` (Koneksi internet dan sesi chat tetap stabil 100%)**.
+
+---
 *Dokumen ini diperbarui secara berkala selama siklus validasi pengujian laboratorium.*
+
 
