@@ -118,7 +118,7 @@ class DecisionEngine:
             is_threat = True
             action = "ALERT"
 
-        logger.debug(f"Decision for {src_ip}: sig_score={sig_result.signature_score}, ml_score={ml_result.anomaly_score}, final_score={final_score}, is_threat={is_threat}, action={action}")
+        logger.info(f"Decision for {src_ip}: sig_score={sig_result.signature_score}, ml_score={ml_result.anomaly_score}, final_score={final_score}, is_threat={is_threat}, action={action}")
 
         if is_threat:
             if is_deduped and action == "ALERT":
