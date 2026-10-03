@@ -567,6 +567,18 @@ def run_app(enable_capture: bool = True):
     except Exception as e:
         logger.error(f"Startup reconcile/load-rules failed: {e}")
 
+    # Re-verify and restore application logging handlers in case third-party libraries altered them
+    root_log = logging.getLogger()
+    if actual_log_path and not any(isinstance(h, logging.FileHandler) for h in root_log.handlers):
+        try:
+            fh = logging.FileHandler(actual_log_path)
+            fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+            root_log.addHandler(fh)
+            root_log.setLevel(log_level)
+            logger.info("Preserved FileHandler on root logger after startup reconcile.")
+        except Exception:
+            pass
+
     # Worker Thread
     worker_thread = threading.Thread(
         target=processing_worker,
@@ -624,7 +636,7 @@ def run_app(enable_capture: bool = True):
     watchdog_thread.start()
     _systemd_notify("READY=1\nSTATUS=SAGEDRAL-ML API and detection pipeline active")
     try:
-        uvicorn.run(app, host=api_host, port=api_port, log_level="warning")
+        uvicorn.run(app, host=api_host, port=api_port, log_level="warning", log_config=None)
     finally:
         stop_event.set()
         _systemd_notify("STOPPING=1")

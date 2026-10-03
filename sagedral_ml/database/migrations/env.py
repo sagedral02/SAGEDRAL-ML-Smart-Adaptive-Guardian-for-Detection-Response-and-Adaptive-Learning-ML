@@ -1,5 +1,4 @@
-"""Alembic environment for SAGEDRAL-ML."""
-
+import logging
 from logging.config import fileConfig
 
 from alembic import context
@@ -10,8 +9,16 @@ from sagedral_ml.database.connection import Base, get_db_url
 import sagedral_ml.database.models  # noqa: F401
 
 config = context.config
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+# Only configure logging from alembic.ini if running standalone and host app hasn't configured logging
+if (
+    config.config_file_name is not None
+    and config.attributes.get("configure_logger", True)
+    and not logging.getLogger().handlers
+):
+    try:
+        fileConfig(config.config_file_name, disable_existing_loggers=False)
+    except Exception:
+        pass
 target_metadata = Base.metadata
 
 

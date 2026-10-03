@@ -366,6 +366,78 @@ Berdasarkan analisis 629 baris log sistem nyata pada `log.md`, 4 perbaikan inti 
 5. **Pencarian Jalur Fleksibel untuk `alembic.ini`:**
    - Memperbaiki `connection.py` agar mencari `alembic.ini` pada folder instalasi dan lingkungan produksi secara aman tanpa memunculkan warning.
 
+---
+
+## 10. Resolusi Root Cause: Mengapa File Log Berhenti Menulis Setelah Startup
+
+### Gejala Masalah:
+Pada file `log.md` (dan `/var/log/sagedral-ml.log`), setiap kali sistem dijalankan, baris log selalu berhenti tepat setelah:
+```text
+2026-10-03 20:09:00,758 [INFO] sagedral_ml.ips.response: nftables table 'inet sagedral' initialized.
+```
+Setelah baris ini, tidak ada satu pun log baru (termasuk *flow capture*, *ML decision*, *heartbeat [TRAFFIC]*, maupun *startup web server*) yang masuk ke file log.
+
+### Akar Penyebab Teknis:
+1. Tepat setelah inisialisasi `IPSModule`, fungsi `run_app()` memanggil:
+   ```python
+   asyncio.run(_startup_reconcile())
+   ```
+2. Fungsi ini memanggil `init_db()` -> `run_alembic_migrations()`, yang mengeksekusi Alembic melalui `command.upgrade(alembic_config, "head")`.
+3. Di dalam `sagedral_ml/database/migrations/env.py`, terdapat baris:
+   ```python
+   if config.config_file_name is not None:
+       fileConfig(config.config_file_name)
+   ```
+4. Standar fungsi Python `fileConfig()` secara *default* memiliki parameter `disable_existing_loggers=True`. Selain itu, file `alembic.ini` mendefinisikan:
+   ```ini
+   [logger_root]
+   level = WARN
+   handlers = console
+   ```
+5. Akibatnya, saat migrasi database dijalankan:
+   - Handler `FileHandler('/var/log/sagedral-ml.log')` **dicopot/dihapus total** dari *root logger* Python.
+   - Level *root logger* diturunkan menjadi **`WARN`**, sehingga seluruh log bertipe `INFO` dibuang dan tidak pernah dicatat lagi.
+
+### Solusi yang Diimplementasikan (Codebase Solutions):
+1. **`sagedral_ml/database/migrations/env.py`**:
+   - Ditambahkan proteksi agar `fileConfig` **tidak menimpa (*hijack*)** konfigurasi logger aplikasi jika logger induk sudah memiliki handler.
+2. **`sagedral_ml/database/connection.py`**:
+   - Menyetel `alembic_config.attributes["configure_logger"] = False` sebelum memanggil `command.upgrade()` agar Alembic tidak mengutak-atik sistem logging runtime.
+3. **`alembic.ini`**:
+   - Mengubah `level = WARN` menjadi `level = INFO` pada `[logger_root]`.
+4. **`sagedral_ml/main.py`**:
+   - Menambahkan mekanisme restorasi otomatis (*self-healing handler*) setelah `_startup_reconcile()` selesai dieksekusi untuk memastikan `FileHandler` tetap aktif.
+   - Menambahkan opsi `log_config=None` pada pemanggilan `uvicorn.run()` agar server ASGI Uvicorn tidak mereset struktur logger SAGEDRAL-ML.
+
+---
+
+## 11. Penyempurnaan Proteksi Gateway NIDPS: Penambahan Hook `forward` pada Firewall
+
+### Gejala Masalah:
+Saat serangan diluncurkan dari Attacker (`10.10.10.2`) ke Gateway (`10.10.10.1`) dan Target Web Server (`192.168.88.20`), IPS berhasil memblokir IP penyerang di level firewall Gateway (terbukti `ping 10.10.10.1` menghasilkan *100% Request timed out*). Namun, ping dan koneksi ke Target Web Server (`192.168.88.20`) masih dapat tembus.
+
+### Akar Penyebab Teknis:
+Pada topologi *Inline Gateway Router*:
+- Paket yang ditujukan ke Gateway itu sendiri melewati hook netfilter **`INPUT`**.
+- Paket yang ditujukan ke server target di belakang router melewati hook netfilter **`FORWARD`**.
+- Pada implementasi awal `sagedral_ml/ips/response.py`, tabel nftables `inet sagedral` hanya memiliki hook `input` dan `output`, tanpa memiliki hook `forward`.
+- Akibatnya, set `@blocklist` hanya memblokir paket yang masuk ke port Gateway lokal, tetapi paket yang di-*forward* ke subnet LAN (`192.168.88.0/24`) tetap diteruskan oleh kernel Linux.
+
+### Solusi yang Diimplementasikan:
+1. **Dukungan Hook `forward` pada nftables (`_setup_nftables`)**:
+   Menambahkan rantai (*chain*) `forward` dan aturan drop:
+   ```text
+   nft add chain inet sagedral forward { type filter hook forward priority 0; }
+   nft add rule inet sagedral forward ip saddr @blocklist drop
+   nft add rule inet sagedral forward ip6 saddr @blocklist6 drop
+   nft add rule inet sagedral forward ip saddr @blocknets drop
+   nft add rule inet sagedral forward ip6 saddr @blocknets6 drop
+   ```
+2. **Dukungan Hook `FORWARD` pada iptables (Fallback Backend)**:
+   Menambahkan `iptables -I FORWARD -s <ip> -j DROP` pada `block_ip` dan `block_network`, serta pembersihan pada `unblock_ip` dan `unblock_network`.
+3. **Hasil**: Begitu penyerang terdeteksi dan diblokir oleh SAGEDRAL-ML, seluruh akses baik ke Gateway lokal maupun ke seluruh komputer/server di belakang Gateway akan **langsung terputus total**.
+
+
 
 
 

@@ -304,6 +304,11 @@ class IPSModule:
             ["nft", "add", "rule", "inet", "sagedral", "input", "ip6", "saddr", "@blocklist6", "drop"],
             ["nft", "add", "rule", "inet", "sagedral", "input", "ip", "saddr", "@blocknets", "drop"],
             ["nft", "add", "rule", "inet", "sagedral", "input", "ip6", "saddr", "@blocknets6", "drop"],
+            ["nft", "add", "chain", "inet", "sagedral", "forward", "{ type filter hook forward priority 0; }"],
+            ["nft", "add", "rule", "inet", "sagedral", "forward", "ip", "saddr", "@blocklist", "drop"],
+            ["nft", "add", "rule", "inet", "sagedral", "forward", "ip6", "saddr", "@blocklist6", "drop"],
+            ["nft", "add", "rule", "inet", "sagedral", "forward", "ip", "saddr", "@blocknets", "drop"],
+            ["nft", "add", "rule", "inet", "sagedral", "forward", "ip6", "saddr", "@blocknets6", "drop"],
             ["nft", "add", "chain", "inet", "sagedral", "output", "{ type filter hook output priority 0; }"],
             ["nft", "add", "rule", "inet", "sagedral", "output", "ip", "daddr", "@blocklist", "drop"],
             ["nft", "add", "rule", "inet", "sagedral", "output", "ip6", "daddr", "@blocklist6", "drop"],
@@ -351,9 +356,11 @@ class IPSModule:
         elif self.backend == "iptables":
             try:
                 c1 = ["iptables", "-I", "INPUT", "-s", clean_ip, "-j", "DROP"]
-                c2 = ["iptables", "-I", "OUTPUT", "-d", clean_ip, "-j", "DROP"]
+                c2 = ["iptables", "-I", "FORWARD", "-s", clean_ip, "-j", "DROP"]
+                c3 = ["iptables", "-I", "OUTPUT", "-d", clean_ip, "-j", "DROP"]
                 subprocess.run(c1, capture_output=True, timeout=5)
                 subprocess.run(c2, capture_output=True, timeout=5)
+                subprocess.run(c3, capture_output=True, timeout=5)
                 logger.info(f"Successfully blocked IP {clean_ip} via iptables.")
                 return True
             except Exception as e:
@@ -388,9 +395,11 @@ class IPSModule:
         elif self.backend == "iptables":
             try:
                 c1 = ["iptables", "-D", "INPUT", "-s", clean_ip, "-j", "DROP"]
-                c2 = ["iptables", "-D", "OUTPUT", "-d", clean_ip, "-j", "DROP"]
+                c2 = ["iptables", "-D", "FORWARD", "-s", clean_ip, "-j", "DROP"]
+                c3 = ["iptables", "-D", "OUTPUT", "-d", clean_ip, "-j", "DROP"]
                 subprocess.run(c1, capture_output=True, timeout=5)
                 subprocess.run(c2, capture_output=True, timeout=5)
+                subprocess.run(c3, capture_output=True, timeout=5)
                 logger.info(f"Successfully unblocked IP {clean_ip} via iptables.")
                 return True
             except Exception as e:
@@ -429,6 +438,7 @@ class IPSModule:
             ]
         elif self.backend == "iptables":
             binary = "ip6tables" if parsed.version == 6 else "iptables"
+            subprocess.run([binary, "-I", "FORWARD", "-s", clean_network, "-j", "DROP"], capture_output=True, timeout=5)
             command = [binary, "-I", "INPUT", "-s", clean_network, "-j", "DROP"]
         else:
             logger.info("[MOCK IPS] Blocked network %s", clean_network)
@@ -463,6 +473,7 @@ class IPSModule:
             ]
         elif self.backend == "iptables":
             binary = "ip6tables" if parsed.version == 6 else "iptables"
+            subprocess.run([binary, "-D", "FORWARD", "-s", clean_network, "-j", "DROP"], capture_output=True, timeout=5)
             command = [binary, "-D", "INPUT", "-s", clean_network, "-j", "DROP"]
         else:
             return True

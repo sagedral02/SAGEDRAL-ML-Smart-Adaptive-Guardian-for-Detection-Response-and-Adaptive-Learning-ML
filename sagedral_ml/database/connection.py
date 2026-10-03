@@ -122,6 +122,7 @@ def run_alembic_migrations() -> bool:
             )
             return False
         alembic_config = AlembicConfig(str(ini_path))
+        alembic_config.attributes["configure_logger"] = False
         alembic_config.set_main_option(
             "script_location",
             str(Path(__file__).resolve().parent / "migrations"),
