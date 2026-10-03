@@ -185,5 +185,8 @@ class FlowAggregator:
                 flow = self.active_flows.pop(key)
                 try:
                     self.flow_queue.put_nowait(flow)
+                    logger.info(
+                        f"Flow timed out ({current_time - flow.end_time:.1f}s) and queued: {key} (pkts={flow.total_fwd_packets + flow.total_bwd_packets})"
+                    )
                 except queue.Full:
                     logger.warning("flow_queue full during timeout cleanup.")

@@ -305,4 +305,30 @@ Karena perbaikan telah di-*push* ke repository `origin/main`, **lakukan langkah 
 4. Buka log pemantauan secara langsung dengan perintah: `tail -f /var/log/sagedral-ml.log` (atau file log terkait).
 5. Luncurkan kembali pengujian dari Laptop Attacker (Windows) dan amati output log tersebut. Ini akan memastikan apakah mesin membaca paket dan membuat flow dengan benar, serta memperlihatkan mengapa skornya mungkin tidak mencapai batas *alert* atau *block*.
 
+---
+
+## 7. Analisis Akar Masalah: Mengapa Log / Journalctl Sempat Kosong & Solusinya
+
+Saat dilakukan pengujian ping dan pengecekan service status (`active (running)`), pengguna mendapati log pada `journalctl` maupun log file tetap **kosong**. Berikut adalah 3 akar penyebab teknisnya:
+
+1. **Paket Normal (Ping/ICMP) Tidak Memiliki Logger Bawaan:**
+   Dalam kode dasar SAGEDRAL-ML, paket normal yang lewat hanya dihitung ke `packet_counter` memori tanpa menulis log apapun ke stdout/file. Log baru dipicu jika terjadi ALERT atau jika flow ditutup (yang mana paket ICMP tidak memiliki FIN/RST sehingga tertahan di `active_flows` selama 60 detik).
+2. **Keterbatasan Hak Akses `journalctl` Tanpa `sudo`:**
+   Service dijalankan di bawah akun sistem (`User=sagedral`). Di sistem Linux/Ubuntu, menjalankan perintah `journalctl -u sagedral-ml` tanpa `sudo` akan menghasilkan output kosong (`-- No entries --`) karena izin akses log service sistem hanya dimiliki oleh user root atau grup `systemd-journal`.
+3. **Penyelarasan Kode Virtual Environment (`pip install -e .`):**
+   Service systemd mengeksekusi `/usr/local/bin/sagedral-ml` yang mengarah ke virtualenv `/opt/sagedral-ml/venv`. Jika saat instalasi pertama menggunakan `pip install .` (bukan mode editable `-e`), maka perintah `git pull` pada direktori clone tidak otomatis mengupdate file `.py` di dalam `site-packages` virtualenv.
+
+### Solusi & Peningkatan Sistem yang Diterapkan:
+1. **Periodic Heartbeat Logging (`[TRAFFIC]`):**
+   Setiap 5 detik, `processing_worker` kini otomatis mencatat statistik paket yang masuk ke interface:
+   `[TRAFFIC] Captured X pkts in 5.0s (Y pkt/s, Z KB/s) | Active Flows: N`
+   Ini langsung membuktikan apakah interface sniffer menerima paket dari kabel fisik atau tidak.
+2. **Flow Timeout Logging:**
+   Flow yang mencapai batas waktu (timeout 60 detik) kini otomatis dicatat saat masuk antrean evaluasi.
+3. **Unbuffered Stdout Flushing:**
+   Menambahkan `sys.stdout.reconfigure(line_buffering=True)` agar setiap pesan log langsung terkirim seketika ke konsol/journald tanpa tertahan di buffer Python.
+4. **Metode Eksekusi Foreground (Terminal Langsung):**
+   Menyediakan opsi menjalankan langsung via terminal untuk transparansi log 100% tanpa hambatan systemd.
+
+
 

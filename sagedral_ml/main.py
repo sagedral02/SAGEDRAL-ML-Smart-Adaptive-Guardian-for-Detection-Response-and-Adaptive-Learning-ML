@@ -356,11 +356,15 @@ def processing_worker(
             flow_aggregator.cleanup_timeouts(now=current_time)
             last_cleanup = current_time
 
-        # 4. Traffic Stats Gathering (every 10s)
-        if (current_time - last_stats_collect) >= 10.0:
-            dt = current_time - last_stats_collect
+        # 4. Traffic Stats Gathering (every 5s)
+        if (current_time - last_stats_collect) >= 5.0:
+            dt = max(current_time - last_stats_collect, 0.001)
             pps = float(packet_counter) / dt
             bps = float(bytes_counter) / dt
+            active_flows_count = len(flow_aggregator.active_flows)
+            logger.info(
+                f"[TRAFFIC] Captured {packet_counter} pkts in {dt:.1f}s ({pps:.1f} pkt/s, {bps/1024:.1f} KB/s) | Active Flows: {active_flows_count}"
+            )
             packet_counter = 0
             bytes_counter = 0
             last_stats_collect = current_time
@@ -450,22 +454,31 @@ def run_app(enable_capture: bool = True):
     """Main orchestrator function."""
     config = get_config()
 
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+        sys.stderr.reconfigure(line_buffering=True)
+    except Exception:
+        pass
+
     # Logging setup
     log_level = getattr(logging, config.get("general", "log_level", "INFO").upper(), logging.INFO)
     handlers = [logging.StreamHandler(sys.stdout)]
     
-    log_file = config.get("general", "log_file", "sagedral-ml.log")
+    log_file = config.get("general", "log_file", "/var/log/sagedral-ml.log")
+    actual_log_path = None
     if log_file:
         try:
             log_dir = os.path.dirname(log_file)
             if log_dir:
                 os.makedirs(log_dir, exist_ok=True)
             handlers.append(logging.FileHandler(log_file))
+            actual_log_path = log_file
         except Exception as e:
             print(f"Could not setup file logging to {log_file}: {e}")
             try:
                 # Fallback to local directory
                 handlers.append(logging.FileHandler("sagedral-ml.log"))
+                actual_log_path = os.path.abspath("sagedral-ml.log")
             except Exception:
                 pass
 
@@ -477,6 +490,7 @@ def run_app(enable_capture: bool = True):
     )
 
     logger.info("=== Starting SAGEDRAL-ML NIDPS System ===")
+    logger.info(f"Logging initialized: Level={config.get('general', 'log_level', 'INFO')} | File={actual_log_path}")
     stop_event.clear()
 
     # Shared Queues
