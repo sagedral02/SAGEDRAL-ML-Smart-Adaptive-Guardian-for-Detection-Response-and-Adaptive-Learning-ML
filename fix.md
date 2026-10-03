@@ -347,6 +347,26 @@ Pesan warning tersebut berasal dari ketidakcocokan versi (*library version misma
 3. Menambahkan filter peringatan `warnings.filterwarnings("ignore", message=r".*trapped error reading bcrypt version.*")`.
 4. Kode telah diperbarui dan di-push ke branch `origin/main`.
 
+---
+
+## 9. Resolusi Isu Kesiapan Produksi (Berdasarkan Audit `log.md`)
+
+Berdasarkan analisis 629 baris log sistem nyata pada `log.md`, 4 perbaikan inti telah diterapkan:
+
+1. **Eliminasi False Positive Broadcast, Multicast & IPv6 Link-Local:**
+   - Menambahkan fungsi helper `is_ignorable_address(src_ip)` pada `decision_engine.py` untuk mengidentifikasi dan mengabaikan `0.0.0.0`, `255.255.255.255`, `::`, `fe80::/10`, serta alamat multicast (`224.0.0.0/4`, `ff00::/8`).
+   - Mencegah DHCP broadcast dan IPv6 Neighbor Discovery OS normal ditandai sebagai alert palsu.
+2. **Koreksi Logika Blokir Mandiri Machine Learning (ML Standalone Blocking):**
+   - Menghapus keterbatasan matematis di mana ML sebelumnya tidak dapat memblokir jika `sig_score == 0`.
+   - Menambahkan logika: jika `ml_result.anomaly_score >= block_threshold` (0.70) dan kelas serangan terdeteksi (`attack_class != "NORMAL"`), sistem otomatis menjatuhkan vonis `BLOCK`.
+3. **Penyempurnaan Proteksi False Alarm pada Trafik Normal:**
+   - Jika multi-class classifier secara eksplisit mengklasifikasikan trafik sebagai `NORMAL` dan tidak ada signature yang cocok, sistem tidak lagi memicu alert `Anomaly_Traffic`.
+4. **Percepatan Siklus Evaluasi Flow (Flow Timeout 15s):**
+   - Mengubah `flow_timeout` dari 60 detik menjadi 15 detik pada `config.py` agar evaluasi penyerangan tanpa FIN/RST (UDP/SYN flood) diproses 4x lebih cepat.
+5. **Pencarian Jalur Fleksibel untuk `alembic.ini`:**
+   - Memperbaiki `connection.py` agar mencari `alembic.ini` pada folder instalasi dan lingkungan produksi secara aman tanpa memunculkan warning.
+
+
 
 
 

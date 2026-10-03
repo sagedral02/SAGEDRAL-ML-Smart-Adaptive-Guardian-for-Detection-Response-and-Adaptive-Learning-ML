@@ -107,7 +107,16 @@ def run_alembic_migrations() -> bool:
         project_root = Path(__file__).resolve().parents[2]
         ini_path = project_root / "alembic.ini"
         if not ini_path.exists():
-            logger.warning(
+            for cand in (
+                Path("/opt/sagedral-ml/alembic.ini"),
+                Path("/etc/sagedral/alembic.ini"),
+                Path.cwd() / "alembic.ini",
+            ):
+                if cand.exists():
+                    ini_path = cand
+                    break
+        if not ini_path.exists():
+            logger.debug(
                 "alembic.ini not found at %s; using create_all compatibility path.",
                 ini_path,
             )

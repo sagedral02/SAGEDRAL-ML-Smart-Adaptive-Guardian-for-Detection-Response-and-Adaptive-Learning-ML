@@ -40,7 +40,7 @@ DEFAULT_CONFIG_DICT: Dict[str, Any] = {
         "watchdog_idle_seconds": 30,
     },
     "feature_extraction": {
-        "flow_timeout": 60,
+        "flow_timeout": 15,
         "max_packets_per_flow": 1000,
         "max_active_flows": 50000,
     },
