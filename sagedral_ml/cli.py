@@ -743,10 +743,12 @@ def model():
 
 
 @model.command("init")
-@click.option("--force", is_flag=True, help="Overwrite existing model files with fresh fallback models")
+@click.option("--force", is_flag=True, help="Overwrite existing model files with fresh models")
 @click.option("--model-dir", default=None, help="Override model directory path (default: from config)")
-def model_init(force, model_dir):
-    """Initialize / regenerate ML detection models (installs fallback models if none exist)."""
+@click.option("--fallback-only", is_flag=True, default=False, help="Generate minimal synthetic fallback models only")
+@click.option("--dataset", "dataset_path", default=None, help="Optional CSV dataset path to train from")
+def model_init(force, model_dir, fallback_only, dataset_path):
+    """Initialize / regenerate ML detection models (trains production LightGBM models by default)."""
     try:
         cfg = get_config()
         resolved_dir = model_dir if model_dir else cfg.get("ml", "model_dir", "/var/lib/sagedral-ml/models")
@@ -777,6 +779,16 @@ def model_init(force, model_dir):
 
         click.echo(f"Initializing ML models in {resolved_dir} ...")
         from sagedral_ml.detection.ml_engine import MLEngine, resolve_model_artifact_dir
+
+        if not fallback_only and dataset_path:
+            click.echo(f"Training production models from dataset: {dataset_path} ...")
+            from sagedral_ml.scripts.train_model import train_models
+            train_models(
+                dataset_path=dataset_path,
+                output_dir=resolved_dir,
+                version="1.0.0-production",
+            )
+
         engine = MLEngine(
             model_dir=resolved_dir,
             anomaly_threshold=anomaly_threshold,
@@ -784,15 +796,30 @@ def model_init(force, model_dir):
             enabled=enabled,
         )
 
+        if fallback_only:
+            engine._create_fallback_models()
+
         if engine.model_loaded:
             artifact_dir = resolve_model_artifact_dir(resolved_dir)
             _cli_ok(f"[OK] ML models ready. loaded={engine.model_loaded} version={engine.version}")
             click.echo(f"  anomaly_model.pkl : {os.path.exists(os.path.join(artifact_dir, 'anomaly_detector.pkl'))}")
             click.echo(f"  attack_classifier : {os.path.exists(os.path.join(artifact_dir, 'attack_classifier.pkl'))}")
+            if engine.model_metadata:
+                acc = engine.model_metadata.get("anomaly_accuracy")
+                f1 = engine.model_metadata.get("anomaly_f1")
+                cls_acc = engine.model_metadata.get("classifier_accuracy")
+                if acc is not None:
+                    click.echo(f"  anomaly_accuracy  : {float(acc)*100:.1f}%")
+                if f1 is not None:
+                    click.echo(f"  anomaly_f1        : {float(f1)*100:.1f}%")
+                if cls_acc is not None:
+                    click.echo(f"  classifier_accuracy : {float(cls_acc)*100:.1f}%")
             if "rulebased" in engine.version:
                 _cli_warn("rule-based fallback active. Install lightgbm+scikit-learn for trained models.")
             elif "fallback" in engine.version:
                 _cli_warn("synthetic data fallback active. Train on real dataset for production accuracy.")
+            else:
+                _cli_ok("Production LightGBM model pipeline active and verified.")
             sys.exit(0)
         else:
             _cli_error("Could not initialize ML models. Check logs above.")

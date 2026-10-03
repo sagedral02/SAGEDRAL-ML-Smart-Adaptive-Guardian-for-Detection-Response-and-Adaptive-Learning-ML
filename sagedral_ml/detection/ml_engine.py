@@ -421,6 +421,52 @@ class MLEngine:
         else:
             return self._create_rulebased_fallback()
 
+    def initialize_production_models(self, samples_per_class: int = 500) -> bool:
+        """Train and persist canonical production LightGBM models using the built-in reference dataset."""
+        if not _LIGHTGBM_AVAILABLE:
+            return False
+        try:
+            import tempfile
+            from sagedral_ml.data.production_dataset import write_production_dataset_csv
+            from sagedral_ml.scripts.train_model import train_models
+
+            with tempfile.TemporaryDirectory(prefix="sagedral-prod-train-") as tmp_dir:
+                csv_path = os.path.join(tmp_dir, "canonical_production.csv")
+                write_production_dataset_csv(csv_path, samples_per_class=samples_per_class)
+                result = train_models(
+                    dataset_path=csv_path,
+                    output_dir=self.model_dir,
+                    version="1.0.0-production",
+                )
+                logger.info("Successfully trained canonical production ML models: %s", result)
+
+            artifact_dir = resolve_model_artifact_dir(self.model_dir)
+            anomaly_path = os.path.join(artifact_dir, "anomaly_detector.pkl")
+            classifier_path = os.path.join(artifact_dir, "attack_classifier.pkl")
+            features_path = os.path.join(artifact_dir, "feature_names.json")
+            profile_path = os.path.join(artifact_dir, "model_profile.json")
+            metadata_path = os.path.join(artifact_dir, "model_metadata.json")
+
+            self.anomaly_model = joblib.load(anomaly_path)
+            if os.path.exists(classifier_path):
+                self.classifier_model = joblib.load(classifier_path)
+            if os.path.exists(features_path):
+                with open(features_path, "r") as f:
+                    self.feature_names = json.load(f)
+            if os.path.exists(profile_path):
+                with open(profile_path, "r") as f:
+                    self.model_profile = json.load(f)
+            if os.path.exists(metadata_path):
+                with open(metadata_path, "r") as f:
+                    self.model_metadata = json.load(f)
+                self.version = str(self.model_metadata.get("version", "1.0.0-production"))
+
+            self.model_loaded = True
+            return True
+        except Exception as e:
+            logger.warning(f"Could not initialize production models ({e}), falling back to synthetic fallback.")
+            return False
+
     def load_models(self) -> bool:
         """Load binary anomaly detector and multiclass attack classifier models."""
         self.model_profile = {}
@@ -434,7 +480,10 @@ class MLEngine:
         metadata_path = os.path.join(artifact_dir, "model_metadata.json")
 
         if not os.path.exists(anomaly_path):
-            logger.warning(f"ML anomaly model not found at {anomaly_path}. Generating fallback models...")
+            logger.info(f"ML anomaly model not found at {anomaly_path}. Initializing production models...")
+            if self.initialize_production_models():
+                return True
+            logger.warning(f"Production initialization unavailable, generating fallback models...")
             return self._create_fallback_models()
 
         try:

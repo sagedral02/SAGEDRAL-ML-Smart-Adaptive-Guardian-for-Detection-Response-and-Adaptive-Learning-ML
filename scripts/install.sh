@@ -88,19 +88,26 @@ info "Creating directories..."
 if ! id -u sagedral &>/dev/null; then
     useradd --system --home-dir /var/lib/sagedral-ml --shell /usr/sbin/nologin sagedral
 fi
-install -d -m 0755 /var/lib/sagedral-ml
-install -d -m 0755 /var/lib/sagedral-ml/models
-install -d -m 0755 /var/lib/sagedral-ml/backups
-install -d -m 0755 /var/lib/sagedral-ml/custom-rules
-install -d -m 0755 /etc/sagedral
+install -d -m 2770 -o root -g sagedral /etc/sagedral
+chmod 2770 /etc/sagedral
+install -d -m 0770 -o sagedral -g sagedral /var/lib/sagedral-ml
+install -d -m 0770 -o sagedral -g sagedral /var/lib/sagedral-ml/models
+install -d -m 0770 -o sagedral -g sagedral /var/lib/sagedral-ml/backups
+install -d -m 0770 -o sagedral -g sagedral /var/lib/sagedral-ml/custom-rules
+chown -R sagedral:sagedral /var/lib/sagedral-ml
 touch /var/log/sagedral-ml.log
-chmod 0666 /var/log/sagedral-ml.log
+chown sagedral:sagedral /var/log/sagedral-ml.log
+chmod 0660 /var/log/sagedral-ml.log
 
 # 9. Config template
 if [[ ! -f /etc/sagedral/config.toml ]]; then
     "${SAG_CLI}" config template > /etc/sagedral/config.toml
-    chmod 0644 /etc/sagedral/config.toml
+    chown root:sagedral /etc/sagedral/config.toml
+    chmod 0640 /etc/sagedral/config.toml
     info "Created default config at /etc/sagedral/config.toml"
+else
+    chown root:sagedral /etc/sagedral/config.toml
+    chmod 0640 /etc/sagedral/config.toml
 fi
 
 # 10. Enable Kernel IPv4 Forwarding
@@ -121,8 +128,9 @@ nft add rule inet sagedral forward ip saddr @blocklist drop 2>/dev/null || true
 nft add rule inet sagedral forward ip saddr @blocknets drop 2>/dev/null || true
 
 # 12. ML Model initialization
-info "Initializing ML detection models..."
+info "Initializing ML detection models (training production LightGBM pipeline)..."
 "${SAG_CLI}" model init --force 2>&1 || true
+chown -R sagedral:sagedral /var/lib/sagedral-ml
 
 # 13. Install systemd service + logrotate
 info "Installing systemd service..."

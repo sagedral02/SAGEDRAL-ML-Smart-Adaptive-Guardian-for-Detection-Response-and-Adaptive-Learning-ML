@@ -295,7 +295,7 @@ def _publish_artifact_set(staging_dir, output_dir, version):
     return final_dir
 
 
-def train_models(dataset_path, output_dir, validation_split=0.2, max_rows_per_class=100000, chunksize=100000):
+def train_models(dataset_path, output_dir, validation_split=0.2, max_rows_per_class=100000, chunksize=100000, version=None):
     if not 0.05 <= float(validation_split) <= 0.5:
         raise ValueError("validation_split must be between 0.05 and 0.5")
     X, y, report = ingest_dataset(dataset_path, max_rows_per_class=max_rows_per_class, chunksize=chunksize)
@@ -337,7 +337,10 @@ def train_models(dataset_path, output_dir, validation_split=0.2, max_rows_per_cl
         normal = X[y == "NORMAL"]
         with open(str(staging / "model_profile.json"), "w", encoding="utf-8") as handle:
             json.dump({"feature_mean": {name: float(normal[name].mean()) for name in FEATURE_NAMES}, "feature_std": {name: float(normal[name].std(ddof=0) or 0.0) for name in FEATURE_NAMES}, "normal_sample_count": int(len(normal)), "generated_at": time.time()}, handle, indent=2)
-        version = "1.0.%d" % int(time.time())
+        if not version:
+            version = "1.0.%d" % int(time.time())
+        else:
+            version = str(version)
         report.update({"dataset_rows": len(X), "class_distribution": {name: int(count) for name, count in y.value_counts().items()}, "validation_split": float(validation_split), "split_strategy": "stratified_random", "random_state": 42, "validation_caveat": "Holdout validation is not cross-day or production accuracy.", "anomaly_accuracy": float(anomaly_accuracy), "anomaly_f1": float(anomaly_f1), "classifier_accuracy": float(classifier_accuracy), "version": version, "trained_at": time.time()})
         with open(str(staging / "model_metadata.json"), "w", encoding="utf-8") as handle:
             json.dump(report, handle, indent=2)
