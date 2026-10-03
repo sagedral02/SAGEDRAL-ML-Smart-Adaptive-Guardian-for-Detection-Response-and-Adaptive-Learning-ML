@@ -48,3 +48,30 @@ def _apply_scapy_wsl_patch():
 
 
 _apply_scapy_wsl_patch()
+
+
+def _apply_bcrypt_passlib_patch():
+    """
+    Compatibility patch for passlib and bcrypt >= 4.0.0.
+    bcrypt 4.0.0 removed bcrypt.__about__.__version__, causing passlib to log:
+    'trapped error reading bcrypt version ... module bcrypt has no attribute __about__'.
+    Injecting a synthetic __about__ module avoids this error and allows passlib to read the version.
+    """
+    try:
+        import bcrypt
+        if not hasattr(bcrypt, "__about__"):
+            bcrypt.__about__ = type("About", (), {"__version__": getattr(bcrypt, "__version__", "4.0.0")})
+    except Exception:
+        pass
+    try:
+        import warnings
+        warnings.filterwarnings(
+            "ignore",
+            message=r".*trapped error reading bcrypt version.*",
+            category=UserWarning,
+        )
+    except Exception:
+        pass
+
+
+_apply_bcrypt_passlib_patch()

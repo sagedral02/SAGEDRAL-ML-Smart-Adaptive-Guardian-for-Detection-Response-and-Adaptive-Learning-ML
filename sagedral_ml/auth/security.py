@@ -36,6 +36,23 @@ except Exception:  # pragma: no cover - exercised in minimal/offline envs
     _JOSE_AVAILABLE = False
 
 try:
+    import bcrypt
+    if not hasattr(bcrypt, "__about__"):
+        bcrypt.__about__ = type("About", (), {"__version__": getattr(bcrypt, "__version__", "4.0.0")})
+except Exception:
+    pass
+
+try:
+    import warnings
+    warnings.filterwarnings(
+        "ignore",
+        message=r".*trapped error reading bcrypt version.*",
+        category=UserWarning,
+    )
+except Exception:
+    pass
+
+try:
     from passlib.context import CryptContext
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
     _PASSLIB_AVAILABLE = True
