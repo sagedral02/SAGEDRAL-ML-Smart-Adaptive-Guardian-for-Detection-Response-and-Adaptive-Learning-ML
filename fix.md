@@ -330,5 +330,23 @@ Saat dilakukan pengujian ping dan pengecekan service status (`active (running)`)
 4. **Metode Eksekusi Foreground (Terminal Langsung):**
    Menyediakan opsi menjalankan langsung via terminal untuk transparansi log 100% tanpa hambatan systemd.
 
+---
+
+## 8. Resolusi Isu: `warning passlib.handler.bcrypt trapped error reading bcrypt version`
+
+### Akar Penyebab:
+Pesan warning tersebut berasal dari ketidakcocokan versi (*library version mismatch*) antara `passlib 1.7.4` dan `bcrypt >= 4.0.0`:
+- Di `bcrypt` rilis 4.0.0+, submodule `bcrypt.__about__.__version__` dihapus dan dipersingkat menjadi `bcrypt.__version__`.
+- Modul `passlib/handlers/bcrypt.py` (pada baris 620) masih mencoba membaca atribut usang `bcrypt.__about__.__version__`.
+- Karena atribut tidak ditemukan (`AttributeError`), `passlib` menangkap error tersebut dan mencetak peringatan (*warning*) ke konsol.
+- Meskipun tidak mematikan program secara langsung, pesan ini mengotori output terminal dan dapat membingungkan saat *startup*.
+
+### Solusi yang Diimplementasikan:
+1. Menambahkan fungsi kompatibilitas `_apply_bcrypt_passlib_patch()` pada `sagedral_ml/__init__.py` dan `sagedral_ml/auth/security.py`.
+2. Fungsi ini menyuntikkan objek sintetik `bcrypt.__about__` yang berisi nilai `__version__` aktif sebelum `passlib` dimuat.
+3. Menambahkan filter peringatan `warnings.filterwarnings("ignore", message=r".*trapped error reading bcrypt version.*")`.
+4. Kode telah diperbarui dan di-push ke branch `origin/main`.
+
+
 
 
