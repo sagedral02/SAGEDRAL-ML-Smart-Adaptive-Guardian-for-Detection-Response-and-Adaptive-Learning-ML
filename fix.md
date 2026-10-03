@@ -276,4 +276,33 @@ Pengujian penyerangan Fase 6 telah dieksekusi secara langsung dari **Laptop Atta
 ---
 *Dokumen ini diperbarui secara berkala selama siklus validasi pengujian laboratorium.*
 
+## 6. Analisis Isu: Mengapa Serangan Tidak Terdeteksi (Alert Kosong)
+
+### Akar Penyebab (Root Cause Analysis)
+Setelah melakukan pengujian di Fase 6 (PortScan, SYN Flood, UDP Flood, Brute Force), tidak ada alert yang muncul di terminal maupun di dashboard. Berikut adalah analisis akar masalah berdasarkan evaluasi arsitektur `FlowAggregator` pada IPS:
+
+1. **Spoofed Source Port & Flow Fragmentation:**
+   Skrip penyerangan (seperti `spoofed_syn_flood.py` dan `spoofed_udp_flood.py`) menghasilkan setiap paket dengan IP sumber (spoofed IP) dan **Port Sumber (Source Port) yang diacak per paket**.
+   `FlowAggregator` dalam SAGEDRAL-ML mengelompokkan paket menjadi suatu *flow* (aliran) berdasarkan *5-tuple*:
+   `(Source IP, Destination IP, Source Port, Destination Port, Protocol)`
+   Karena port sumber selalu berubah di setiap paket, **setiap paket tunggal dianggap sebagai flow unik (baru) yang hanya terdiri dari 1 paket**.
+2. **Tidak Memenuhi Ambang Batas Signature (Thresholds):**
+   Aturan deteksi seperti `SIG-001` (SYN Flood), `SIG-003`, dan `SIG-007` mensyaratkan jumlah minimal paket dalam satu flow yang dievaluasi (misalnya `total_fwd_packets >= 50` atau `min_syn_count: 50`). Karena setiap flow terpecah menjadi ukuran 1 paket, aturan ini tidak pernah terpicu.
+3. **ML Engine Tidak Melihat Pola Banjir (Flood):**
+   Machine Learning mengandalkan fitur flow statistik (seperti `flow_duration`, laju `packets_per_sec` per flow). Flow tunggal 1 paket tidak memberikan sinyal anomali "flood" kepada model.
+
+### Solusi Debugging yang Diimplementasikan
+Untuk memvalidasi apakah flow benar-benar diekstrak atau drop, serta melihat keputusan akhir dari engine, perbaikan logging telah di-push ke branch utama:
+1. **Centralized Logging (`main.py`):** Modul IPS sekarang akan membuat log file yang ditulis ke dalam `sagedral-ml.log` (seperti yang diatur di `config.toml`, atau otomatis tersimpan di folder lokal jika folder `/var/log` gagal ditulis).
+2. **Debug Log untuk Flow Extraction (`extractor.py`):** Menambahkan pencatatan (`logger.debug`) ketika sebuah flow selesai diagregasi dan masuk ke antrean (queue) bersama jumlah paketnya.
+3. **Debug Log untuk Decision Engine (`decision_engine.py`):** Menambahkan log skor akhir dari *Signature* dan *ML* beserta aksi (Action) yang diputuskan (misal: ALLOW, ALERT, atau BLOCK).
+
+### Langkah Selanjutnya (Fase Debugging)
+Karena perbaikan telah di-*push* ke repository `origin/main`, **lakukan langkah berikut di Laptop SAGEDRAL-ML (Linux Gateway)**:
+1. Jalankan `git pull` untuk memperbarui sistem.
+2. Edit file `/etc/sagedral/config.toml` (atau *environment variable* terkait) dan ubah `log_level = "DEBUG"` agar log debugging ini muncul.
+3. Restart IPS dengan `sudo systemctl restart sagedral-ml`.
+4. Buka log pemantauan secara langsung dengan perintah: `tail -f /var/log/sagedral-ml.log` (atau file log terkait).
+5. Luncurkan kembali pengujian dari Laptop Attacker (Windows) dan amati output log tersebut. Ini akan memastikan apakah mesin membaca paket dan membuat flow dengan benar, serta memperlihatkan mengapa skornya mungkin tidak mencapai batas *alert* atau *block*.
+
 
