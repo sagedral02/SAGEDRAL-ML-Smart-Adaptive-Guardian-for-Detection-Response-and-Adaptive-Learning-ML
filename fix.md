@@ -455,6 +455,46 @@ Pengujian telah diluncurkan secara menyeluruh dari laptop Attacker (Windows) via
 - Pemutusan koneksi yang sempat dialami oleh Attacker membuktikan bahwa **aturan drop hook `FORWARD` nftables bekerja dengan sangat efektif**.
 - Koneksi ke Target maupun Gateway langsung terputus seketika begitu ambang batas pertahanan terlewati.
 
+---
+
+## 13. Installer 100% Zero-Touch Turnkey & Collector Diagnostik Menyeluruh
+
+Untuk memenuhi kebutuhan operasional agar sistem langsung siap pakai (*production ready*) tanpa perlu mengetik perintah manual berulang kali:
+
+### 1. Collector Diagnostik Menyeluruh (`scripts/collect_full_diagnostics.sh`):
+Skrip ini mengumpulkan seluruh data diagnostik sistem ke dalam satu file tunggal:
+`~/sagedral_full_debug.log`
+
+Isi file mencakup 11 sektor penting:
+1. Informasi Sistem, CPU, RAM, Kernel, dan Disk OS.
+2. Status Routing, Interface, dan IPv4 Forwarding (`sysctl net.ipv4.ip_forward`).
+3. Seluruh Aturan Firewall NFTables (Tabel `inet sagedral`, sets `@blocklist`, `@blocknets`) dan IPTables.
+4. Status Service Systemd, Proses Aktif (`sagedral`/`uvicorn`), dan Port Listening (8000).
+5. Integritas Database SQLite (`sagedral.db`), Daftar Tabel, Jumlah Baris (`alerts`, `blocked_ips`, `rules`, `users`), dan 5 Alert Terbaru.
+6. Status Model Machine Learning di `/var/lib/sagedral-ml/models/` (`metadata.json`, fitur, dan CLI info).
+7. Konfigurasi Aktif di `/etc/sagedral/config.toml`.
+8. Uji Sanity Import Paket Python di Virtualenv (`sagedral_ml`, `scapy`, `fastapi`, `alembic`, `numpy`, `bcrypt`, dll).
+9. Uji Kesehatan API Lokal (`curl http://127.0.0.1:8000/api/v1/status`).
+10. Log Systemd Journal (200 baris terakhir).
+11. Seluruh Riwayat File Log Lengkap (`/var/log/sagedral-ml.log`).
+
+**Cara Menjalankan:**
+```bash
+sudo bash scripts/collect_full_diagnostics.sh
+```
+
+### 2. Turnkey Installer 100% Zero-Touch (`install.sh` & `scripts/install.sh`):
+Skrip instalasi kini telah disempurnakan menjadi *one-stop turnkey deployment*:
+1. Menginstal seluruh *dependency* OS lengkap (`libpcap-dev`, `nftables`, `tcpdump`, `sqlite3`, `build-essential`, `python3-dev`, `libgomp1`).
+2. Menyiapkan Python virtualenv di `/opt/sagedral-ml/venv`.
+3. Menginstal seluruh pustaka Python dan paket `sagedral_ml` dalam mode *editable* (`pip install -e .`) agar pembaruan kode Git langsung aktif seketika.
+4. Menginisialisasi model ML secara otomatis (`sagedral-ml model init --force`).
+5. Mengaktifkan kernel IPv4 forwarding secara permanen di `/etc/sysctl.d/99-sagedral.conf`.
+6. Menyiapkan tabel dan set firewall nftables (`input`, `forward`, `output`).
+7. Memasang *service* systemd `/etc/systemd/system/sagedral-ml.service` yang berjalan otomatis saat booting (`Restart=always`).
+8. Menjalankan *service* dan memverifikasi kesiapan port 8000.
+
+
 
 
 

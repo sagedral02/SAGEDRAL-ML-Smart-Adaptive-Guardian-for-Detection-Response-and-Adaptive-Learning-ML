@@ -52,9 +52,10 @@ if command -v apt-get &>/dev/null; then
         tcpdump \
         libgomp1 \
         ca-certificates \
-        curl
+        curl \
+        sqlite3
 elif command -v yum &>/dev/null; then
-    yum install -y python3-pip python3-devel libpcap-devel nftables tcpdump gcc gcc-c++ libgomp
+    yum install -y python3-pip python3-devel libpcap-devel nftables tcpdump gcc gcc-c++ libgomp sqlite
 fi
 
 INSTALL_ROOT=/opt/sagedral-ml
@@ -65,16 +66,16 @@ python3 -m venv "${VENV_DIR}"
 VENV_PYTHON="${VENV_DIR}/bin/python"
 
 # 4. Upgrade pip/setuptools/wheel terlebih dahulu (kritis untuk build Py3.8 wheels)
-info "Upgrading pip, setuptools, and wheel for Python 3.8 build compatibility..."
+info "Upgrading pip, setuptools, and wheel for build compatibility..."
 "${VENV_PYTHON}" -m pip install --upgrade pip setuptools wheel
 
-# 5. Install Python dependencies from requirements.txt (version-capped for Py3.8)
-info "Installing Python dependencies from requirements.txt (Py3.8-compatible version pins)..."
+# 5. Install Python dependencies from requirements.txt
+info "Installing Python dependencies from requirements.txt..."
 "${VENV_PYTHON}" -m pip install -r "${PROJECT_DIR}/requirements.txt"
 
-# 6. Install sagedral-ml Python package
-info "Installing sagedral-ml Python package..."
-"${VENV_PYTHON}" -m pip install "${PROJECT_DIR}"
+# 6. Install sagedral-ml Python package in editable mode
+info "Installing sagedral-ml Python package (editable mode for continuous sync)..."
+"${VENV_PYTHON}" -m pip install -e "${PROJECT_DIR}"
 
 # 7. Verify sagedral-ml CLI accessible
 SAG_CLI=/usr/local/bin/sagedral-ml
@@ -87,103 +88,66 @@ info "Creating directories..."
 if ! id -u sagedral &>/dev/null; then
     useradd --system --home-dir /var/lib/sagedral-ml --shell /usr/sbin/nologin sagedral
 fi
-install -d -o sagedral -g sagedral -m 0750 /var/lib/sagedral-ml
-install -d -o sagedral -g sagedral -m 0750 /var/lib/sagedral-ml/models
-install -d -o sagedral -g sagedral -m 0750 /var/lib/sagedral-ml/backups
-install -d -o sagedral -g sagedral -m 0750 /var/lib/sagedral-ml/custom-rules
-# The service persists dashboard config changes by creating a temporary
-# backup next to config.toml.  The setgid directory keeps those files in the
-# sagedral group while preventing access by unrelated users.
-install -d -o root -g sagedral -m 2770 /etc/sagedral
+install -d -m 0755 /var/lib/sagedral-ml
+install -d -m 0755 /var/lib/sagedral-ml/models
+install -d -m 0755 /var/lib/sagedral-ml/backups
+install -d -m 0755 /var/lib/sagedral-ml/custom-rules
+install -d -m 0755 /etc/sagedral
 touch /var/log/sagedral-ml.log
-chown -R sagedral:sagedral /var/lib/sagedral-ml
-chown sagedral:sagedral /var/log/sagedral-ml.log
-chmod 0750 /var/lib/sagedral-ml
-chmod 0640 /var/log/sagedral-ml.log
+chmod 0666 /var/log/sagedral-ml.log
 
 # 9. Config template
 if [[ ! -f /etc/sagedral/config.toml ]]; then
     "${SAG_CLI}" config template > /etc/sagedral/config.toml
-    chown root:sagedral /etc/sagedral/config.toml
-    chmod 0660 /etc/sagedral/config.toml
+    chmod 0644 /etc/sagedral/config.toml
     info "Created default config at /etc/sagedral/config.toml"
 fi
-# Repair ownership/modes as well when upgrading an existing installation.
-chown root:sagedral /etc/sagedral/config.toml
-chmod 0660 /etc/sagedral/config.toml
-chown root:sagedral /etc/sagedral
-chmod 2770 /etc/sagedral
 
-# 10. Initialize nftables table
-info "Initializing nftables sagedral table..."
+# 10. Enable Kernel IPv4 Forwarding
+info "Configuring IPv4 Forwarding for Gateway Inline Mode..."
+echo "net.ipv4.ip_forward = 1" > /etc/sysctl.d/99-sagedral.conf
+sysctl -p /etc/sysctl.d/99-sagedral.conf 2>/dev/null || sysctl -w net.ipv4.ip_forward=1 2>/dev/null || true
+
+# 11. Initialize nftables table (input, forward, output)
+info "Initializing nftables sagedral table (input + forward inline protection)..."
 nft add table inet sagedral 2>/dev/null || true
 nft add set inet sagedral blocklist "{ type ipv4_addr; }" 2>/dev/null || true
+nft add set inet sagedral blocknets "{ type ipv4_addr; flags interval; }" 2>/dev/null || true
 nft add chain inet sagedral input "{ type filter hook input priority 0; }" 2>/dev/null || true
 nft add rule inet sagedral input ip saddr @blocklist drop 2>/dev/null || true
+nft add rule inet sagedral input ip saddr @blocknets drop 2>/dev/null || true
+nft add chain inet sagedral forward "{ type filter hook forward priority 0; }" 2>/dev/null || true
+nft add rule inet sagedral forward ip saddr @blocklist drop 2>/dev/null || true
+nft add rule inet sagedral forward ip saddr @blocknets drop 2>/dev/null || true
 
-# 11. ML Model initialization (CRITICAL — generates fallback models so ML Model Loaded = True on first start)
-info "Initializing ML detection models (rule-based fallback if LightGBM can't compile yet)..."
-if runuser -u sagedral -- "${SAG_CLI}" model init; then
-    info "ML models initialized successfully."
-else
-    warn "ML model init returned non-zero. Service will generate fallbacks on first startup."
-    info "If failure persists, run: sudo apt-get install -y build-essential libgomp1 && sudo sagedral-ml model init --force"
-fi
+# 12. ML Model initialization
+info "Initializing ML detection models..."
+"${SAG_CLI}" model init --force 2>&1 || true
 
-# 12. Install systemd service + logrotate
+# 13. Install systemd service + logrotate
 info "Installing systemd service..."
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -f "${SCRIPT_DIR}/../systemd/sagedral-ml.service" ]]; then
-    cp "${SCRIPT_DIR}/../systemd/sagedral-ml.service" /etc/systemd/system/sagedral-ml.service
-else
-    cat > /etc/systemd/system/sagedral-ml.service << 'EOF'
-[Unit]
-Description=SAGEDRAL-ML Network Intrusion Detection and Prevention System
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=notify
-NotifyAccess=main
-User=sagedral
-Group=sagedral
-WorkingDirectory=/var/lib/sagedral-ml
-UMask=0027
-Environment=HOME=/var/lib/sagedral-ml
-Environment=SAGEDRAL_CONFIG_PATH=/etc/sagedral/config.toml
-Environment=PYTHONUNBUFFERED=1
-ExecStartPre=/usr/local/bin/sagedral-ml config validate
-ExecStart=/usr/local/bin/sagedral-ml start --no-daemon
-Restart=on-failure
-RestartSec=10
-WatchdogSec=60
-NoNewPrivileges=true
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
-AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/etc/sagedral /var/lib/sagedral-ml /var/log/sagedral-ml.log
-
-[Install]
-WantedBy=multi-user.target
-EOF
-fi
+cp "${PROJECT_DIR}/systemd/sagedral-ml.service" /etc/systemd/system/sagedral-ml.service
 
 info "Installing logrotate configuration..."
-if [[ -f "${SCRIPT_DIR}/logrotate.conf" ]]; then
-    cp "${SCRIPT_DIR}/logrotate.conf" /etc/logrotate.d/sagedral-ml
+if [[ -f "${PROJECT_DIR}/scripts/logrotate.conf" ]]; then
+    cp "${PROJECT_DIR}/scripts/logrotate.conf" /etc/logrotate.d/sagedral-ml
     info "Logrotate config installed at /etc/logrotate.d/sagedral-ml"
 fi
 
 if [ -d /run/systemd/system ] && systemctl is-system-running &>/dev/null; then
-    systemctl daemon-reload 2>/dev/null || true
-    systemctl enable sagedral-ml 2>/dev/null || true
-    info "Systemd service installed and enabled."
-    info "Restarting SAGEDRAL-ML service to load the installed package and refreshed ML metadata..."
-    systemctl restart sagedral-ml 2>/dev/null || warn "Could not restart service automatically. Start or restart manually: sudo systemctl restart sagedral-ml"
+    systemctl daemon-reload
+    systemctl enable sagedral-ml
+    info "Starting SAGEDRAL-ML service via systemd..."
+    systemctl restart sagedral-ml
+    sleep 3
+    if systemctl is-active --quiet sagedral-ml; then
+        info "SAGEDRAL-ML systemd service is ACTIVE and RUNNING! ✅"
+    else
+        warn "Service started but status is not active yet. Checking logs..."
+        journalctl -u sagedral-ml -n 20 --no-pager || true
+    fi
 else
     warn "System is not booted with systemd as PID 1 (WSL or container environment detected)."
-    warn "Service file created at /etc/systemd/system/sagedral-ml.service"
     info "To start SAGEDRAL-ML manually, run: sudo sagedral-ml start"
 fi
 
