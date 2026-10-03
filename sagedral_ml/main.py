@@ -473,6 +473,7 @@ def run_app(enable_capture: bool = True):
         level=log_level,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         handlers=handlers,
+        force=True,
     )
 
     logger.info("=== Starting SAGEDRAL-ML NIDPS System ===")
