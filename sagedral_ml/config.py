@@ -92,7 +92,7 @@ DEFAULT_CONFIG_DICT: Dict[str, Any] = {
     "api": {
         "host": "0.0.0.0",
         "port": 8000,
-        "cors_origins": ["http://localhost:5173", "http://localhost:3000"],
+        "cors_origins": ["*"],
         "trusted_proxies": ["127.0.0.1", "::1"],
         "csp_enabled": True,
         "metrics_enabled": True,

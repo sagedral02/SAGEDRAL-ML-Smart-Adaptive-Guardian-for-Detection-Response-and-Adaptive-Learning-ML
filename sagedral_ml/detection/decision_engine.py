@@ -94,9 +94,10 @@ class DecisionEngine:
         ml_result: MLResult,
         src_ip: str,
         now: Optional[float] = None,
+        dst_ip: Optional[str] = None,
     ) -> DecisionResult:
         # Ignore non-routable / broadcast / link-local / multicast addresses (eliminate false positives)
-        if is_ignorable_address(src_ip):
+        if is_ignorable_address(src_ip) or (dst_ip and is_ignorable_address(dst_ip)):
             return DecisionResult(
                 is_threat=False,
                 final_score=0.0,

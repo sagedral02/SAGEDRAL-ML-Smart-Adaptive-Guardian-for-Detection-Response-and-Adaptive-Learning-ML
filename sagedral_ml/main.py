@@ -239,6 +239,7 @@ def processing_worker(
                     sig_result,
                     ml_result,
                     src_ip=flow_record.src_ip,
+                    dst_ip=flow_record.dst_ip,
                     now=current_time,
                 )
                 if rate_limit_enabled and rate_limiter.record(
