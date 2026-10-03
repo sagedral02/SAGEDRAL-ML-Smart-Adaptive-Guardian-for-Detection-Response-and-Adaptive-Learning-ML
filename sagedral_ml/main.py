@@ -452,10 +452,27 @@ def run_app(enable_capture: bool = True):
 
     # Logging setup
     log_level = getattr(logging, config.get("general", "log_level", "INFO").upper(), logging.INFO)
+    handlers = [logging.StreamHandler(sys.stdout)]
+    
+    log_file = config.get("general", "log_file", "sagedral-ml.log")
+    if log_file:
+        try:
+            log_dir = os.path.dirname(log_file)
+            if log_dir:
+                os.makedirs(log_dir, exist_ok=True)
+            handlers.append(logging.FileHandler(log_file))
+        except Exception as e:
+            print(f"Could not setup file logging to {log_file}: {e}")
+            try:
+                # Fallback to local directory
+                handlers.append(logging.FileHandler("sagedral-ml.log"))
+            except Exception:
+                pass
+
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        handlers=[logging.StreamHandler(sys.stdout)],
+        handlers=handlers,
     )
 
     logger.info("=== Starting SAGEDRAL-ML NIDPS System ===")

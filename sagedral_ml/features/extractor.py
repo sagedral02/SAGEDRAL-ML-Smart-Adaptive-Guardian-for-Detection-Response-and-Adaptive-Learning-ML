@@ -147,6 +147,7 @@ class FlowAggregator:
                 completed_flow = self.active_flows.pop(target_key)
                 try:
                     self.flow_queue.put_nowait(completed_flow)
+                    logger.debug(f"Flow completed and queued: {target_key} (pkts={completed_flow.total_fwd_packets + completed_flow.total_bwd_packets})")
                 except queue.Full:
                     logger.warning("flow_queue is full, completed flow dropped.")
 
