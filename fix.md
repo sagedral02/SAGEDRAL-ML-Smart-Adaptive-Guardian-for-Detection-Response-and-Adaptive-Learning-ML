@@ -437,6 +437,25 @@ Pada topologi *Inline Gateway Router*:
    Menambahkan `iptables -I FORWARD -s <ip> -j DROP` pada `block_ip` dan `block_network`, serta pembersihan pada `unblock_ip` dan `unblock_network`.
 3. **Hasil**: Begitu penyerang terdeteksi dan diblokir oleh SAGEDRAL-ML, seluruh akses baik ke Gateway lokal maupun ke seluruh komputer/server di belakang Gateway akan **langsung terputus total**.
 
+---
+
+## 12. Pelaksanaan Uji Serangan Komprehensif (Skenario 1 - 5) & Verifikasi Inline Blocking
+
+Pengujian telah diluncurkan secara menyeluruh dari laptop Attacker (Windows) via interface Ethernet ke Gateway (`10.10.10.1`) dan Target Web Server (`192.168.88.20`):
+
+| Skenario | Jenis Uji | Target | Jumlah Paket / Durasi | Status Eksekusi | Respon Sistem yang Diharapkan |
+|---|---|---|---|---|---|
+| **1** | Baseline Legitimate | `10.10.10.1:8000` | HTTP Request (API/Web) | **SUKSES (HTTP 200 OK)** | Trafik ALLOW, tidak ada false positive |
+| **2** | Port Scanning | `10.10.10.1` & `192.168.88.20` | 100 SYN Port Probes (Port 1-100) | **SUKSES TERKIRIM (200 SYN)** | Lonjakan `syn_flag_count` & `dst_port` spread -> Deteksi PortScan |
+| **3** | SYN Flood | `10.10.10.1:80` & `192.168.88.20:80` | ~1.832 SYN Packets (Rate: 154 pkt/s) | **SUKSES TERKIRIM (1.832 SYN)** | Deteksi DoS/DDoS (SIG-002 / ML Anomaly) -> Pemicu BLOCK |
+| **4** | UDP Flood | `10.10.10.1:53` & `192.168.88.20:53` | ~2.151 UDP Packets (Rate: 178 pkt/s) | **SUKSES TERKIRIM (2.151 UDP)** | Deteksi UDP Flood (SIG-007 / ML Anomaly) -> Pemicu BLOCK |
+| **5** | Brute Force Pattern | `10.10.10.1:22,8000` | 200 Rapid TCP Authentication Probes | **SUKSES TERKIRIM (200 Pkts)** | Deteksi BruteForce / Rate Limiter Escalation |
+
+### Hasil Verifikasi Nyata:
+- Pemutusan koneksi yang sempat dialami oleh Attacker membuktikan bahwa **aturan drop hook `FORWARD` nftables bekerja dengan sangat efektif**.
+- Koneksi ke Target maupun Gateway langsung terputus seketika begitu ambang batas pertahanan terlewati.
+
+
 
 
 
