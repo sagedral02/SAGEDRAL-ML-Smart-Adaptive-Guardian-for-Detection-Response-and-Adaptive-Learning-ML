@@ -1,220 +1,233 @@
 # Dokumentasi Temuan, Solusi & Panduan Pengujian Lintas-Laptop (fix.md)
 
-Dokumen ini mendokumentasikan secara lengkap seluruh temuan masalah sistem/konfigurasi, solusi teknis yang telah diterapkan, serta panduan operasional langkah-demi-langkah lintas-laptop untuk pengujian **SAGEDRAL-ML** sesuai dengan `peskiza.md`, `docs/prd.md`, dan `docs/RUNBOOK.md`.
+Dokumen ini mendokumentasikan secara lengkap seluruh temuan masalah sistem/konfigurasi, solusi teknis yang telah diterapkan di codebase, serta panduan operasional langkah-demi-langkah lintas-laptop untuk pengujian **SAGEDRAL-ML** sesuai dengan `peskiza.md`, `docs/prd.md`, dan `docs/RUNBOOK.md`.
 
 ---
 
-## 1. Topologi Fisik & Rencana Alokasi Saat Ini
+## 1. Topologi Fisik & Rencana Alokasi Terverifikasi (Inline Gateway Mode)
 
-Topologi jaringan pengujian saat ini telah terhubung secara fisik ke Router MikroTik (`RB951Ui-2HnD`):
+Topologi jaringan pengujian saat ini telah terhubung secara fisik dan terverifikasi aktif:
 
 ```text
-+---------------------------------------------------------------------------------+
-|                       Router MikroTik (IP Gateway: 192.168.88.1)                 |
-|                                                                                 |
-|   ether2 (Master LAN)      ether3 (Slave LAN)       ether4 (Mirror Target)       |
-|    [Laptop Attacker]        [Laptop Target]            [Laptop SAGEDRAL]        |
-|    IP: 192.168.88.254       IP: 192.168.88.249         Promisc / Tanpa IP (0.0.0.0)|
-|           |                        |                           |                |
-|           +====== Trafik Asli =====+                           |                |
-|                      | (Hardware Switch Mirror Copy)           |                |
-|                      +.........................................+                |
-|                                                                                 |
-|   wlan1 (Access Point Wi-Fi: SAGEDRAL-MGMT-WIFI | IP: 192.168.88.1)             |
-+----------------------------------+----------------------------------------------+
-                                   :
-            +----------------------+----------------------+
-            v                                             v
-  [ Laptop SAGEDRAL-ML ]                        [ Laptop Attacker / Admin ]
-  Koneksi Wi-Fi: 192.168.88.30                  Koneksi Wi-Fi: 192.168.88.251
-  Web Dashboard Server (:8000)                  Buka Browser Dashboard:
-                                                http://192.168.88.1:8000 atau
-                                                http://192.168.88.30:8000
++-------------------------+
+| Modem Technicolor       |  IP Gateway: 192.168.0.1/24
+| DJA0230 Telstra (ISP)   |  (Koneksi Internet Utama)
++------------+------------+
+             |
+             | Kabel LAN 1
+             v
++------------+----------------------------------------------------+
+| Laptop Linux – SAGEDRAL-ML (Inline Gateway)                    |
+|                                                                 |
+|   Interface WAN: enp1s0  ---> IP: 192.168.0.x (DHCP dari modem) |
+|   Interface LAN: enxc8   ---> IP: 10.10.10.1/24 (USB Dongle)    |
+|                                                                 |
+|   - IP Forwarding Kernel : net.ipv4.ip_forward = 1              |
+|   - NAT Masquerade       : iptables -t nat -A POSTROUTING       |
+|                            -o enp1s0 -j MASQUERADE              |
+|   - SAGEDRAL-ML IPS      : In-path inspection di enxc8          |
++------------+----------------------------------------------------+
+             |
+             | Kabel LAN 2 (dari USB Dongle enxc8)
+             v
++------------+----------------------------------------------------+
+| Router MikroTik (RB951Ui-2HnD)                                 |
+|                                                                 |
+|   ether1-gateway : IP 10.10.10.31/24 (DHCP dari enxc8, GW .1)   |
+|   bridge-local   : IP 192.168.88.1/24 (DHCP Server: .10-.254)   |
+|   wlan1          : AP "SAGEDRAL-MGMT-WIFI" (Pass: sagedral123)  |
+|   Port Forward   : TCP 8000 -> 10.10.10.1:8000                  |
++----+---------------+-------------------------------+------------+
+     |               |                               |
+     | ether2        | ether3                        | wlan1 (Wi-Fi)
+     v               v                               v
+[Laptop Windows] [PC Windows Target]           [Admin HP / Laptop]
+Attacker (PC Ini) Web Server (Port 80)          Buka Dashboard:
+IP: 192.168.88.x  IP: 192.168.88.20             http://192.168.88.1:8000
 ```
 
 ### Tabel Rincian Perangkat:
 | No | Perangkat & Fisik Port | Sistem Operasi | Peran / Fungsi | IP Address & Antarmuka |
 |---|---|---|---|---|
-| 1 | **Laptop Attacker** (`ether2`) | Windows | Peluncur Uji Serangan & Monitor Dashboard | • Ethernet: `192.168.88.254`<br>• Wi-Fi: `192.168.88.251` |
-| 2 | **Laptop Target** (`ether3`) | Windows | Server Target (Web HTTP) | • Ethernet: `192.168.88.249` (DHCP) |
-| 3 | **Laptop SAGEDRAL** (`ether4`) | Linux (Ubuntu) | NIDPS Sensor & Host Dashboard | • Ethernet `enp1s0`: **0.0.0.0 (Promiscuous)**<br>• Wi-Fi: `192.168.88.30` |
-| 4 | **MikroTik Router** | RouterOS v6.30 | Hardware Switch Mirror & Gateway | • Gateway: `192.168.88.1` |
+| 1 | **Modem ISP** | Technicolor DJA0230 | Gateway Internet Utama | `192.168.0.1/24` (Port LAN) |
+| 2 | **Laptop SAGEDRAL** | Linux (Ubuntu) | Inline NIDPS Gateway & Dashboard | • WAN `enp1s0`: `192.168.0.x` (DHCP)<br>• LAN Dongle `enxc8`: `10.10.10.1/24` |
+| 3 | **MikroTik Router** | RouterOS v6.30 | Distribusi LAN & Wi-Fi Management | • WAN `ether1-gateway`: `10.10.10.31/24`<br>• LAN `bridge-local`: `192.168.88.1/24` |
+| 4 | **Laptop Attacker** (`ether2`) | Windows | Peluncur Uji Serangan & Monitor | • Ethernet: `192.168.88.x` (DHCP) |
+| 5 | **Laptop Target** (`ether3`) | Windows | Server Target (Web HTTP Port 80) | • Ethernet: `192.168.88.20` (DHCP Statis) |
+| 6 | **Admin Device** (Wi-Fi) | Bebas (HP/Laptop) | Monitoring Web Dashboard | • SSID: `SAGEDRAL-MGMT-WIFI` (DHCP) |
 
 ---
 
-## 2. Temuan Masalah (Findings) & Solusi Teknis (Solutions)
+## 2. Status Temuan Masalah (Findings) & Solusi Teknis (Codebase Solutions)
 
 ### Temuan 1: False Alarm "HIGH DDoS" Muncul Saat Interaksi Normal dengan Dashboard
 - **Gejala:** Saat pengguna membuka atau berinteraksi dengan dashboard via Wi-Fi, muncul toast alert:
-  `Alerta ameasa: HIGH DDoS husi 192.168.88.253` (dan `192.168.88.251` / `.254`).
+  `Alerta ameasa: HIGH DDoS husi 192.168.88.x`.
 - **Akar Penyebab (Sistem):**
   Di file `sagedral_ml/features/models.py`, kalkulasi durasi flow dihitung dengan:
   ```python
   duration = max(self.end_time - self.start_time, 1e-6)
   flow_packets_per_sec = float(total_pkts) / duration
   ```
-  Ketika 1 paket tunggal tiba (seperti Windows LLMNR port 5355, DNS, atau NTP), waktu mulai sama dengan waktu selesai (`duration = 0`). Karena di-clamp ke `1e-6` ($0.000001$ detik), penghitungan menghasilkan:
+  Ketika 1 paket tunggal tiba, waktu mulai sama dengan waktu selesai (`duration = 0`). Karena di-clamp ke `1e-6` ($0.000001$ detik), penghitungan menghasilkan:
   $$\frac{1 \text{ paket}}{0.000001 \text{ detik}} = \mathbf{1.000.000 \text{ paket/detik}}$$
-- **Solusi yang Telah Diterapkan:**
-  Di `sagedral_ml/features/models.py`, jika `raw_duration <= 0.0`, nilai `flow_packets_per_sec` dan `flow_bytes_per_sec` ditetapkan ke `0.0` (bukan 1 juta pps).
+- **Solusi di Codebase (TERATASI & TERUJI):**
+  Di `sagedral_ml/features/models.py`:
+  ```python
+  raw_duration = self.end_time - self.start_time
+  duration = max(raw_duration, 1e-6)
+  flow_bytes_per_sec = float(total_bytes) / duration if raw_duration > 0 else 0.0
+  flow_packets_per_sec = float(total_pkts) / duration if raw_duration > 0 else 0.0
+  ```
+- **Hasil Pengujian Unit Test:**
+  `tests/test_feature_models.py::test_single_packet_zero_duration_rate PASSED` ✅
 
 ---
 
-### Temuan 2: Aturan Aturan `SIG-007` (UDP Flood) & `SIG-003` (ICMP Flood) Tidak Memiliki Ambang Batas Minimal Paket
-- **Gejala:** Paket UDP tunggal atau ICMP ping langsung memicu rule `SIG-007` / `SIG-003` dengan severity `HIGH` dan aksi `BLOCK`.
+### Temuan 2: Aturan `SIG-007` (UDP Flood) & `SIG-003` (ICMP Flood) Tidak Memiliki Ambang Batas Minimal Paket
+- **Gejala:** Paket UDP tunggal (DNS/NTP/LLMNR) atau ICMP ping langsung memicu rule `SIG-007` / `SIG-003` dengan severity `HIGH` dan aksi `BLOCK`.
 - **Akar Penyebab (Sistem):**
-  Di `sagedral_ml/detection/rules/default_rules.py`, rule `SIG-007` dan `SIG-003` hanya memeriksa `flow_packets_per_sec > 5000` tanpa memeriksa total paket (`total_fwd_packets`). Berbeda dengan `SIG-001` (SYN Flood) yang memeriksa `syn_flag_count > 100`.
-- **Solusi yang Telah Diterapkan:**
-  Menambahkan syarat ambang batas `total_fwd_packets >= 50` pada `SIG-007` dan `SIG-003`. Trafik normal 1–2 paket tidak akan pernah dianggap banjir paket (Flood DDoS).
+  Di `sagedral_ml/detection/rules/default_rules.py`, rule `SIG-007` dan `SIG-003` hanya memeriksa laju `flow_packets_per_sec` tanpa memeriksa total akumulasi paket (`total_fwd_packets`).
+- **Solusi di Codebase (TERATASI & TERUJI):**
+  Di `sagedral_ml/detection/rules/default_rules.py`:
+  - `SIG-003` (ICMP Flood): Ditambahkan syarat `total_fwd_packets >= 50` dan `min_packets_per_sec: 1000`.
+  - `SIG-007` (UDP Flood): Ditambahkan syarat `total_fwd_packets >= 50` dan `min_packets_per_sec: 5000`.
+- **Hasil Pengujian Unit Test:**
+  - `tests/test_signature_engine.py::test_single_udp_packet_not_flagged PASSED` ✅
+  - `tests/test_signature_engine.py::test_single_icmp_ping_not_flagged PASSED` ✅
+  - `tests/test_signature_engine.py::test_udp_flood_detected PASSED` ✅
 
 ---
 
-### Temuan 3: Port Capture `enp1s0` di Laptop Linux Memegang IP DHCP `192.168.88.253`
-- **Gejala:** Laptop SAGEDRAL-ML mengirimkan paket sistemnya sendiri (NTP, DNS query) keluar dari interface `enp1s0`, lalu sensor menangkap paketnya sendiri.
-- **Akar Penyebab (Konfigurasi):**
-  Interface kabel `enp1s0` belum di-flush IP-nya setelah dicolok ke port mirror `ether4`.
-- **Solusi:**
-  Jalankan perintah berikut di Laptop Linux agar antarmuka murni menjadi sensor pasif (*sniffing only*):
-  ```bash
-  sudo ip addr flush dev enp1s0
-  sudo ip link set enp1s0 up
-  sudo ip link set enp1s0 promisc on
-  ```
+### Temuan 3: Transisi Port Capture dari Promiscuous Pasif ke Inline Gateway
+- **Status Sebelumnya:** Sensor pasif pada `enp1s0` dengan IP `0.0.0.0` di port mirror.
+- **Kondisi Baru (Inline Gateway):**
+  - `enp1s0`: Menghubung ke modem Technicolor (WAN, DHCP `192.168.0.x`).
+  - `enxc8`: Dongle USB Ethernet menghubung ke MikroTik `ether1` (LAN, IP `10.10.10.1/24`).
+  - Capture interface diatur pada **`enxc8`** di `/etc/sagedral/config.toml` dengan mode IPS (`af_packet` / `nfqueue`).
+- **Status:** Telah diverifikasi di `peskiza.md` dan teruji mengalirkan internet ke MikroTik.
 
 ---
 
-### Temuan 4: Akses Dashboard Lewat IP Gateway Router `http://192.168.88.1:8000` Timeout (Hairpin NAT Missing)
-- **Gejala:** Dashboard bisa dibuka lewat `http://192.168.88.30:8000`, tetapi jika dibuka lewat `http://192.168.88.1:8000` koneksi mengalami *timed out*.
+### Temuan 4: Akses Dashboard Lewat IP Gateway Router `http://192.168.88.1:8000` Timeout (Hairpin NAT)
+- **Gejala:** Dashboard hanya bisa diakses langsung via IP dongle `10.10.10.1:8000`, tetapi dari jaringan LAN MikroTik `http://192.168.88.1:8000` mengalami timeout.
 - **Akar Penyebab (Router):**
-  Router MikroTik memiliki aturan `dst-nat` yang mengalihkan port 8000 ke `192.168.88.30`. Namun karena klien dan server berada dalam subnet yang sama (`192.168.88.0/24`), paket balasan dikirim langsung dari server ke klien tanpa melalui router (asymmetric routing / NAT loopback issue).
-- **Solusi yang Telah Diterapkan Langsung di MikroTik:**
-  Menambahkan aturan Hairpin NAT:
+  Kurangnya Hairpin NAT di router MikroTik saat client di bridge lokal mengakses IP gateway router sendiri pada port yang di-forward.
+- **Solusi yang Telah Diterapkan di MikroTik:**
   ```routeros
-  /ip firewall nat add chain=srcnat src-address=192.168.88.0/24 dst-address=192.168.88.30 protocol=tcp dst-port=8000 action=masquerade comment="Hairpin NAT for Dashboard"
+  /ip firewall nat add chain=dstnat protocol=tcp dst-port=8000 action=dst-nat to-addresses=10.10.10.1 to-ports=8000 comment="Forward Dashboard"
+  /ip firewall nat add chain=srcnat src-address=192.168.88.0/24 dst-address=10.10.10.1 protocol=tcp dst-port=8000 action=masquerade comment="Hairpin NAT for Dashboard"
   ```
-  *(Status: Telah diterapkan dan diverifikasi berhasil diakses HTTP 200 OK).*
+- **Status:** Telah aktif di router MikroTik dan diverifikasi.
 
 ---
 
 ### Temuan 5: Firewall Windows pada Laptop Target Menolak Paket Masuk
-- **Gejala:** Ping ke `192.168.88.249` menghasilkan *Request timed out*, dan port 80 belum terbuka.
+- **Gejala:** Ping ke Target menghasilkan *Request timed out*, dan port HTTP 80 tertutup.
 - **Akar Penyebab (Target):**
-  Windows Defender Firewall secara default memblokir ICMP echo request dan port yang belum didaftarkan inbound rule.
+  Windows Defender Firewall secara default memblokir ICMP echo request dan port web yang belum didaftarkan inbound rule.
 - **Solusi:**
-  Nyalakan web server di Laptop Target dan izinkan akses di Windows Firewall.
+  Di PC Windows Target (PowerShell Administrator):
+  ```powershell
+  netsh advfirewall firewall add rule name="SAGEDRAL Lab - Allow ICMPv4" protocol=icmpv4:8,any dir=in action=allow
+  New-NetFirewallRule -DisplayName "SAGEDRAL Lab - Allow Port 80 HTTP" -Direction Inbound -LocalPort 80 -Protocol TCP -Action Allow
+  ```
+- **Status:** Terdokumentasi lengkap di `peskiza.md` Fase 4.
 
 ---
 
 ### Temuan 6: Crash UnicodeEncodeError pada Skrip Uji Serangan Windows Terminal
-- **Gejala:** Saat skrip `scripts/testing/spoofed_portscan.py`, `spoofed_syn_flood.py`, `spoofed_udp_flood.py`, atau `spoofed_brute_force.py` dijalankan di Command Prompt / PowerShell Windows, skrip crash dengan error:
-  `UnicodeEncodeError: 'charmap' codec can't encode character '\u2705'`
+- **Gejala:** Saat skrip `scripts/testing/spoofed_*.py` dijalankan di terminal Windows, skrip crash dengan error:
+  `UnicodeEncodeError: 'charmap' codec can't encode character`
 - **Akar Penyebab (Attacker Client):**
-  Konsol bawaan Windows menggunakan tabel kode karakter warisan (`cp1252` atau `cp437`) yang tidak mendukung karakter emoji Unicode (`✅`, `👉`).
-- **Solusi yang Telah Diterapkan:**
-  1. Menambahkan `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` pada seluruh skrip pengujian saat berjalan di platform Windows (`win32`).
-  2. Mengganti seluruh simbol emoji dengan penanda teks ASCII standar (`[OK]`, `->`).
+  Console Windows default (`cp1252`) tidak mendukung emoji Unicode.
+- **Solusi di Codebase (TERATASI):**
+  1. Seluruh 4 skrip pengujian (`spoofed_portscan.py`, `spoofed_syn_flood.py`, `spoofed_udp_flood.py`, `spoofed_brute_force.py`) telah dilengkapi:
+     ```python
+     if sys.platform == "win32":
+         try:
+             sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+             sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+         except Exception:
+             pass
+     ```
+  2. Karakter emoji diganti menjadi penanda teks ASCII standar (`[OK]`, `->`, `[!]`).
 
 ---
 
-## 3. Instruksi Langkah Pengujian Lintas-Laptop
+## 3. Instruksi Langkah Pengujian Lintas-Laptop (Fase 6)
 
 Lakukan langkah-langkah berikut secara teratur pada masing-masing laptop:
 
 ### BAGIAN A: Pada Laptop Target (Windows di `ether3`)
-IP Laptop Target saat ini adalah **`192.168.88.249`**.
+IP Laptop Target adalah **`192.168.88.20`** (Telah diset DHCP Statis di MikroTik).
 
 1. **Jalankan Web Server HTTP:**
-   Buka Command Prompt atau PowerShell di Laptop Target, lalu ketik:
+   Buka PowerShell di Laptop Target, lalu ketik:
    ```powershell
    python -m http.server 80
    ```
-   *(Jika muncul pop-up Windows Firewall, centang Private & Public, lalu klik **Allow access**).*
-
-2. **(Opsional) Izinkan Port 80 & ICMP via PowerShell Admin:**
-   Jika web server belum bisa diakses dari laptop lain, buka PowerShell as Administrator di Laptop Target lalu jalankan:
-   ```powershell
-   New-NetFirewallRule -DisplayName "Allow HTTP 80" -Direction Inbound -LocalPort 80 -Protocol TCP -Action Allow
-   netsh advfirewall firewall add rule name="Allow ICMPv4" protocol=icmpv4:any,any dir=in action=allow
-   ```
-
-3. **Biarkan terminal web server ini tetap menyala selama proses pengujian.**
+2. **Biarkan terminal web server ini tetap menyala selama proses pengujian.**
 
 ---
 
-### BAGIAN B: Pada Laptop SAGEDRAL-ML (Linux di `ether4`)
-Laptop ini bertindak sebagai mesin IDS/IPS Machine Learning.
-
-1. **Sinkronkan Kode Perbaikan:**
-   Buka terminal di Laptop Linux, masuk ke direktori repository SAGEDRAL-ML:
+### BAGIAN B: Pada Laptop SAGEDRAL-ML (Linux Gateway)
+1. **Sinkronkan Kode Terbaru:**
    ```bash
    cd /path/to/SAGEDRAL-ML-Smart-Adaptive-Guardian-for-Detection-Response-and-Adaptive-Learning-ML
    git pull
    ```
-   *(Pastikan file `sagedral_ml/features/models.py` dan `sagedral_ml/detection/rules/default_rules.py` telah terbarui).*
-
-2. **Atur Port Capture `enp1s0` ke Promiscuous Tanpa IP:**
-   ```bash
-   sudo ip addr flush dev enp1s0
-   sudo ip link set enp1s0 up
-   sudo ip link set enp1s0 promisc on
-   ```
-
-3. **Restart Service SAGEDRAL-ML:**
+2. **Restart Service SAGEDRAL-ML:**
    ```bash
    sudo systemctl restart sagedral-ml
    sudo systemctl status sagedral-ml --no-pager
    ```
-
-4. **(Sangat Direkomendasikan) Buka Terminal Visual Monitor Real-time:**
+3. **(Opsional) Buka Monitor Visual Real-Time:**
    ```bash
    sudo python3 scripts/testing/vm_side_monitor.py
    ```
-   Monitor ini akan menampilkan laju PPS, anomaly score ML, dan status deteksi secara live.
 
 ---
 
 ### BAGIAN C: Pada Laptop Attacker (Windows Ini di `ether2`)
-Laptop ini menjalankan skrip pengujian serangan bertahap.
-
-Buka PowerShell di laptop ini, pastikan berada di folder proyek:
+Buka PowerShell di folder proyek ini:
 `c:\Users\HP\Hercio\SAGEDRAL-ML-Smart-Adaptive-Guardian-for-Detection-Response-and-Adaptive-Learning-ML`
 
 #### 1. Uji Konektivitas Awal (Baseline HTTP)
 ```powershell
-curl.exe -i http://192.168.88.249/
+curl.exe -i http://192.168.88.20/
 ```
 *Pastikan mendapatkan respons HTTP 200 OK dari Laptop Target.*
 
 #### 2. Skenario 1: Trafik Normal (Baseline)
-Kirimkan sejumlah permintaan web normal:
 ```powershell
-for ($i=1; $i -le 25; $i++) { curl.exe -s http://192.168.88.249/ > $null; Start-Sleep -Milliseconds 500 }
+for ($i=1; $i -le 25; $i++) { curl.exe -s http://192.168.88.20/ > $null; Start-Sleep -Milliseconds 500 }
 ```
 * **Hasil di Dashboard:** Anomaly score rendah (`< 0.25`), trafik tercatat normal tanpa alert.
 
 #### 3. Skenario 2: Port Scanning Attack
 ```powershell
-python scripts/testing/spoofed_portscan.py --target 192.168.88.249 --ports top100 --interval 0.02
+python scripts/testing/spoofed_portscan.py --target 192.168.88.20 --ports top100 --interval 0.02
 ```
-* **Hasil di Dashboard:** Terdeteksi alert kategori `PortScan` (Aturan `SIG-002`), skor anomali meningkat ke `0.6 - 0.8`.
+* **Hasil di Dashboard:** Terdeteksi alert `PortScan` (Aturan `SIG-002`), skor anomali meningkat ke `0.6 - 0.8`.
 
 #### 4. Skenario 3: DoS / DDoS SYN Flood Attack
 ```powershell
-python scripts/testing/spoofed_syn_flood.py --target 192.168.88.249 --port 80 --pps 500 --duration 20
+python scripts/testing/spoofed_syn_flood.py --target 192.168.88.20 --port 80 --pps 500 --duration 20
 ```
-* **Hasil di Dashboard:** Grafik PPS melonjak drastis, alert berlabel `DDoS` / `SYN Flood` (Aturan `SIG-001`), skor anomali LightGBM `> 0.85`.
+* **Hasil di Dashboard:** Grafik PPS melonjak drastis, alert `DDoS / SYN Flood` (Aturan `SIG-001`), skor anomali LightGBM `> 0.85`.
 
 #### 5. Skenario 4: UDP Flood Attack
 ```powershell
-python scripts/testing/spoofed_udp_flood.py --target 192.168.88.249 --port 80 --duration 15
+python scripts/testing/spoofed_udp_flood.py --target 192.168.88.20 --port 80 --duration 15
 ```
-* **Hasil di Dashboard:** Lonjakan paket UDP volume tinggi terdeteksi valid sebagai `DDoS` / `UDP Flood` (Aturan `SIG-007` yang telah diperbaiki).
+* **Hasil di Dashboard:** Terdeteksi valid sebagai `DDoS / UDP Flood` (Aturan `SIG-007`).
 
 #### 6. Skenario 5: Brute Force Attack
 ```powershell
-python scripts/testing/spoofed_brute_force.py --target 192.168.88.249 --ports 80,8080 --duration 15 --attempts-per-port 150
+python scripts/testing/spoofed_brute_force.py --target 192.168.88.20 --ports 80,8080 --duration 15 --attempts-per-port 150
 ```
-* **Hasil di Dashboard:** Terdeteksi pola koneksi berulang cepat ke port aplikasi web, kategori `BruteForce` / `Web Attack`.
+* **Hasil di Dashboard:** Terdeteksi pola koneksi berulang cepat ke port aplikasi web, kategori `BruteForce / Web Attack`.
 
 ---
 
@@ -222,11 +235,12 @@ python scripts/testing/spoofed_brute_force.py --target 192.168.88.249 --ports 80
 
 | Item Evaluasi | Referensi | Target Spesifikasi | Hasil Aktual |
 |---|---|---|---|
-| **Capture Interface** | `RUNBOOK.md` §3.3 | Promiscuous mode pasif (SPAN) | ✅ `enp1s0` menangkap salinan cermin dari switch MikroTik tanpa mengganggu koneksi data |
+| **Capture Interface** | `RUNBOOK.md` §3.3 | In-path Inline Gateway | ✅ `enxc8` menangkap dan menginspeksi traffic nyata yang melintasi router MikroTik |
 | **Separasi Jalur** | `peskiza.md` §1 | Management Plane via Wi-Fi terisolasi dari Data Plane | ✅ Dashboard tetap responsif saat pengujian banjir paket (500 PPS) |
 | **Deteksi Hibrida** | `prd.md` §2.1 | Kombinasi Signature + Machine Learning LightGBM | ✅ Skor hibrida ($0.4 \times \text{Sig} + 0.6 \times \text{ML}$) bekerja akurat |
 | **Penyimpanan Alerta** | `prd.md` §4.1 | SQLite persistensi & WebSocket real-time broadcast | ✅ Tersimpan di SQLite `/var/lib/sagedral-ml/sagedral.db` dan disiarkan via WebSocket |
-| **Zero False-Positive Baseline** | `prd.md` §2.2 | Tidak menandai paket broadcast/multicast OS normal sebagai serangan | ✅ Telah teratasi dengan perbaikan penghitungan durasi nol dan ambang batas `min_packets` |
+| **Zero False-Positive Baseline** | `prd.md` §2.2 | Tidak menandai paket broadcast/multicast OS normal sebagai serangan | ✅ Teratasi dengan perbaikan penghitungan durasi nol dan ambang batas `min_packets >= 50` |
 
 ---
 *Dokumen ini diperbarui secara berkala selama siklus validasi pengujian laboratorium.*
+
